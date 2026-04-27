@@ -124,8 +124,8 @@ workflow:
   prompt.
 - `pid session` prompts for branch only because the initial session prompt is
   optional.
-- pid shows current values before each prompt and asks for final confirmation
-  before continuing.
+- pid shows current values before each prompt, updates that summary in place
+  on TTY output, and asks for final confirmation before continuing.
 
 If stdin is not a TTY, pid keeps non-interactive behavior: missing required
 arguments print usage or validation errors instead of blocking for input.

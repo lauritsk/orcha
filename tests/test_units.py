@@ -14,6 +14,7 @@ import pytest
 import pid
 import pid.config as config_module
 import pid.cli as cli_module
+import pid.interactive as interactive_module
 from pid.commands import CommandRunner, require_command
 from pid.config import AgentConfig, PIDConfig, load_config, parse_config
 from pid.errors import PIDAbort
@@ -263,6 +264,55 @@ def test_output_helpers_preserve_newline_behavior(
     assert captured.out == "no newline\n"
     assert stdout.getvalue() == "out\n"
     assert stderr.getvalue() == "err\n"
+
+
+class TTYStream:
+    def isatty(self) -> bool:
+        return True
+
+
+def test_interactive_display_clears_previous_tty_render(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "pid.interactive.click.get_text_stream", lambda _name: TTYStream()
+    )
+    display = interactive_module._InteractiveDisplay()
+    values = {
+        "attempts": "3",
+        "thinking": "medium",
+        "branch": "(unset)",
+        "prompt": "(unset)",
+    }
+
+    display.render(values)
+    display.render({**values, "branch": "feature/x"})
+
+    output = capsys.readouterr().out
+    assert "\033[7A" in output
+    assert "\033[2K\r" in output
+
+
+def test_interactive_display_clears_validation_error_tty_render(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "pid.interactive.click.get_text_stream", lambda _name: TTYStream()
+    )
+    display = interactive_module._InteractiveDisplay()
+    values = {
+        "attempts": "3",
+        "thinking": "medium",
+        "branch": "(unset)",
+        "prompt": "(unset)",
+    }
+
+    display.render(values, error="Enter a positive integer, e.g. 3.")
+    capsys.readouterr()
+    display.render(values)
+
+    output = capsys.readouterr().out
+    assert output.startswith("\033[8A")
 
 
 def test_resolve_interactive_args_prompts_all_values_when_empty(

@@ -42,7 +42,7 @@ run = "hk check --all"
 [tasks.test]
 description = "Run test suite with coverage gate"
 depends = ["install"]
-run = "uv run pytest --cov=pid --cov-report=term-missing --cov-fail-under=95"
+run = "uv run pytest -n auto --cov=pid --cov-report=term-missing --cov-fail-under=95"
 
 [tasks.build]
 description = "Build project package"

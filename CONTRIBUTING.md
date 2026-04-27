@@ -27,7 +27,7 @@ Use `mise` tasks rather than invoking tools directly:
 | --- | --- |
 | `mise run lint` | Run hk-managed checks. |
 | `mise run fix` | Run hk-managed formatters and fixers. |
-| `mise run test` | Run pytest with coverage reporting and a 95% coverage gate. |
+| `mise run test` | Run pytest in parallel with coverage reporting and a 95% coverage gate. |
 | `mise run build` | Build the Python package. |
 | `mise run check` | Run all project checks. |
 | `mise run release:bump` | Bump the package version. |

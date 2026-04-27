@@ -6,4 +6,5 @@
   - [x] Write full implementation plan in `PLAN.md`
   - [x] Set up Python package structure, uv dependencies, and mise tasks
   - [ ] Port behavior behind tests
+    - [x] Add initial Typer app and smoke tests
   - [ ] Add docs and migration wrapper

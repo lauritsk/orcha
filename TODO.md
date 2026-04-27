@@ -1,5 +1,7 @@
 # TODO
 
+- [x] Move audit into hk.pkl
+- [x] Squash merge PR #6
 - [x] Add AI-authored commit and PR messages
 - [x] Add interactive session flow
 - [x] Apply refactor skill to project

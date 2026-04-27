@@ -255,6 +255,14 @@ class Repository:
         )
         return self.output(["log", "-1", "--format=%s"], cwd=worktree_path).strip()
 
+    def contains_ref(self, worktree_path: str, ref: str) -> bool:
+        """Return true when HEAD contains ref."""
+
+        result = self.runner.run(
+            ["git", "merge-base", "--is-ancestor", ref, "HEAD"], cwd=worktree_path
+        )
+        return result.returncode == 0
+
     def rebase_in_progress(self, worktree_path: str) -> bool:
         """Return true when git reports a rebase state directory."""
 

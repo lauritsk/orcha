@@ -212,6 +212,10 @@ def test_prompts_workflow_and_commit_config_are_configurable(tmp_path: Path) -> 
                 "checks_poll_interval_seconds": 1,
                 "merge_retry_limit": 2,
                 "trust_mise": False,
+                "base_refresh_enabled": False,
+                "base_refresh_stages": ["before_message", "before_pr", "after_checks"],
+                "base_refresh_limit": 4,
+                "base_refresh_agent_conflict_fix": False,
             },
         },
         tmp_path / "config.toml",
@@ -223,6 +227,14 @@ def test_prompts_workflow_and_commit_config_are_configurable(tmp_path: Path) -> 
     assert config.prompts.diagnostic_output_limit == 12
     assert config.workflow.checks_timeout_seconds == 5
     assert config.workflow.trust_mise is False
+    assert config.workflow.base_refresh_enabled is False
+    assert config.workflow.base_refresh_stages == (
+        "before_message",
+        "before_pr",
+        "after_checks",
+    )
+    assert config.workflow.base_refresh_limit == 4
+    assert config.workflow.base_refresh_agent_conflict_fix is False
 
 
 @pytest.mark.parametrize(
@@ -268,6 +280,18 @@ def test_invalid_agent_config_is_rejected(
             "pr_head_oid_args must not be empty",
         ),
         ({"workflow": {"trust_mise": "no"}}, "workflow.trust_mise must be a boolean"),
+        (
+            {"workflow": {"base_refresh_stages": ["during_lunch"]}},
+            "unsupported stage: during_lunch",
+        ),
+        (
+            {"workflow": {"base_refresh_limit": -1}},
+            "workflow.base_refresh_limit must be non-negative",
+        ),
+        (
+            {"workflow": {"base_refresh_stages": ["before_pr", "before_pr"]}},
+            "workflow.base_refresh_stages must not contain duplicates",
+        ),
         ({"prompts": {"message": "write metadata"}}, "must include {output_path}"),
         ({"prompts": {"ci_fix": "   "}}, "prompts.ci_fix must not be blank"),
         (

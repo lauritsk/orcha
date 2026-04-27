@@ -1,5 +1,6 @@
 # TODO
 
+- [x] Fix release workflow dirty `mise.lock`
 - [x] Configure GoReleaser cosign signing and Syft SBOMs
 - [x] Move version bump hooks into `cog.toml`
 - [x] Implement Orcha as a Python/Typer app

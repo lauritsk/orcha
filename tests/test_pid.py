@@ -31,7 +31,9 @@ def test_app_shows_typer_help() -> None:
     assert "--config" in output
     assert "pid sessions [--all|-a]" in output
     assert "pid config show|default|path" in output
-    assert "Show this message and exit" in output
+    assert "--output" in output
+    assert "agent, or all" in output
+    assert "Show this message" in output
 
 
 def test_init_command_writes_default_config(

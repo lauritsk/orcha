@@ -52,7 +52,10 @@ class Forge:
             if create_result.returncode != 0:
                 write_command_output(create_result)
                 abort(create_result.returncode)
-            if has_output(create_result.stdout):
+            if (
+                has_output(create_result.stdout)
+                and not self.runner.writes_success_output()
+            ):
                 write_collected(create_result.stdout, stream=sys.stdout)
             return
 

@@ -385,6 +385,66 @@ def test_initial_pi_failure_stops_before_review(tmp_path: Path) -> None:
     assert final_state["pi_calls"][0]["thinking"] == "low"
 
 
+def test_normal_output_shows_agent_stdout_and_step_finish(tmp_path: Path) -> None:
+    state = base_state(
+        tmp_path,
+        worktree_dirty="",
+        worktree_diff="",
+        initial_pi_out="initial summary\n",
+        review_pi_out="review summary\n",
+        initial_pi_err="hidden initial stderr\n",
+        review_pi_err="hidden review stderr\n",
+    )
+
+    process, _ = run_pid(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
+
+    assert_success(process)
+    assert "initial summary\n" in process.stdout
+    assert "review summary\n" in process.stdout
+    assert "pid: agent initial finished" in process.stdout
+    assert "pid: agent review finished" in process.stdout
+    assert "hidden initial stderr" not in process.stderr
+    assert "hidden review stderr" not in process.stderr
+
+
+def test_agent_output_mode_shows_successful_agent_stderr(tmp_path: Path) -> None:
+    state = base_state(
+        tmp_path,
+        worktree_dirty="",
+        worktree_diff="",
+        initial_pi_out="initial summary\n",
+        initial_pi_err="initial diagnostic\n",
+        review_pi_err="review diagnostic\n",
+    )
+
+    process, _ = run_pid(
+        tmp_path, ["--output", "agent", "feature/cool-stuff", "prompt"], state=state
+    )
+
+    assert_success(process)
+    assert "initial summary\n" in process.stdout
+    assert "initial diagnostic\n" in process.stderr
+    assert "review diagnostic\n" in process.stderr
+
+
+def test_all_output_mode_shows_captured_command_output_once(tmp_path: Path) -> None:
+    state = base_state(
+        tmp_path,
+        pr_exists_before=True,
+        checks_sequence=[{"status": 0, "out": "checks passed\n"}],
+        merge_sequence=[{"status": 0, "out": "merged\n"}],
+    )
+
+    process, _ = run_pid(
+        tmp_path, ["--output", "all", "feature/cool-stuff", "prompt"], state=state
+    )
+
+    assert_success(process)
+    assert process.stdout.count("checks passed\n") == 1
+    assert process.stdout.count("merged\n") == 1
+    assert "https://example.invalid/pr/1" in process.stdout
+
+
 def test_session_mode_runs_interactive_pi_then_resumes_flow(tmp_path: Path) -> None:
     state = base_state(tmp_path)
 

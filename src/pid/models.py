@@ -3,6 +3,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
+
+
+class OutputMode(StrEnum):
+    """Console output detail level."""
+
+    NORMAL = "normal"
+    AGENT = "agent"
+    ALL = "all"
 
 
 @dataclass(frozen=True)

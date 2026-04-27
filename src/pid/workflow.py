@@ -12,7 +12,7 @@ from pid.errors import PIDAbort, abort
 from pid.github import Forge
 from pid.keepawake import KeepAwake
 from pid.messages import parse_commit_message
-from pid.models import CommitMessage, ParsedArgs
+from pid.models import CommandResult, CommitMessage, OutputMode, ParsedArgs
 from pid.output import (
     echo_err,
     echo_out,
@@ -38,15 +38,20 @@ class PIDFlow:
     """Implements the pid orchestration lifecycle."""
 
     def __init__(
-        self, runner: CommandRunner | None = None, config: PIDConfig | None = None
+        self,
+        runner: CommandRunner | None = None,
+        config: PIDConfig | None = None,
+        output_mode: OutputMode = OutputMode.NORMAL,
     ) -> None:
         self.runner = runner or CommandRunner()
+        self.runner.set_output_mode(output_mode)
         self.config = config or PIDConfig()
         self.repository = Repository(self.runner)
         self.forge = Forge(self.runner, self.config.forge)
         self.review_rejected_first_pass = False
         self.session_logger: SessionLogger | None = None
         self.keep_awake: KeepAwake | None = None
+        self.output_mode = output_mode
 
     def run(self, argv: list[str]) -> int:
         exit_code = 0
@@ -365,7 +370,9 @@ class PIDFlow:
                 checks_poll_interval_seconds,
                 worktree_path,
             )
-            if has_output(checks_out):
+            if has_output(checks_out) and (
+                checks_status != 0 or not self.runner.writes_success_output()
+            ):
                 write_collected(checks_out, stream=sys.stdout)
             if checks_status != 0:
                 if self.forge.output_reports_no_checks(checks_out):
@@ -399,7 +406,9 @@ class PIDFlow:
                 pr_url,
                 worktree_path,
             )
-            if has_output(merge_result.stdout):
+            if has_output(merge_result.stdout) and (
+                merge_result.returncode != 0 or not self.runner.writes_success_output()
+            ):
                 write_collected(merge_result.stdout, stream=sys.stdout)
 
             if merge_result.returncode == 0:
@@ -648,6 +657,8 @@ class PIDFlow:
         if agent_result.returncode == 0:
             if self.session_logger is not None:
                 self.session_logger.step_pass(log_step)
+            self.write_agent_success_output(agent_result)
+            echo_out(f"pid: {log_step} finished")
             return
 
         if self.session_logger is not None:
@@ -659,6 +670,16 @@ class PIDFlow:
             f"{agent_result.returncode}{separator}{failure_context}"
         )
         abort(agent_result.returncode)
+
+    def write_agent_success_output(self, result: CommandResult) -> None:
+        """Show useful successful agent output without flooding normal runs."""
+
+        if self.output_mode == OutputMode.ALL:
+            return
+        if has_output(result.stdout):
+            write_collected(result.stdout, stream=sys.stdout)
+        if self.output_mode == OutputMode.AGENT and has_output(result.stderr):
+            write_collected(result.stderr, stream=sys.stderr)
 
     def bump_after_review_rejected_followup(self, followup_thinking_level: str) -> str:
         if not self.review_rejected_first_pass or not followup_thinking_level:
@@ -729,7 +750,12 @@ class PIDFlow:
         print_merge_success(pr_title, pr_url, self.config.forge.label)
 
 
-def run_pid(argv: list[str], *, config: PIDConfig | None = None) -> int:
+def run_pid(
+    argv: list[str],
+    *,
+    config: PIDConfig | None = None,
+    output_mode: OutputMode = OutputMode.NORMAL,
+) -> int:
     """Run the pid flow and return a process exit code."""
 
-    return PIDFlow(config=config).run(argv)
+    return PIDFlow(config=config, output_mode=output_mode).run(argv)

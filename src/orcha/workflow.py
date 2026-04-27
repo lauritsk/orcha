@@ -16,6 +16,7 @@ from orcha.output import (
     echo_out,
     print_commit_message,
     print_merge_success,
+    set_session_logger,
     write_collected,
     write_command_output,
 )
@@ -27,6 +28,7 @@ from orcha.prompts import (
     build_review_prompt,
 )
 from orcha.repository import Repository, validate_branch_name
+from orcha.session_logging import SessionLogger
 from orcha.utils import env_int, has_output, review_target_for, worktree_path_for
 
 
@@ -38,16 +40,33 @@ class OrchaFlow:
         self.repository = Repository(self.runner)
         self.github = GitHub(self.runner)
         self.review_rejected_first_pass = False
+        self.session_logger: SessionLogger | None = None
 
     def run(self, argv: list[str]) -> int:
+        exit_code = 0
         try:
             self._run(argv)
         except OrchaAbort as error:
-            return error.code
-        return 0
+            exit_code = error.code
+        except Exception as error:
+            exit_code = 1
+            if self.session_logger is not None:
+                self.session_logger.event(
+                    f"unhandled exception: {type(error).__name__}: {error}"
+                )
+            raise
+        finally:
+            if self.session_logger is not None:
+                self.session_logger.event(f"exit code: {exit_code}")
+                self.session_logger.close()
+                set_session_logger(None)
+                self.runner.set_logger(None)
+        return exit_code
 
     def _run(self, argv: list[str]) -> None:
         parsed = parse_args(argv)
+        self.start_session_logging(argv)
+        self.log_parsed_args(parsed)
         followup_thinking_level = parsed.thinking_level
 
         validate_branch_name(self.runner, parsed.branch)
@@ -96,6 +115,7 @@ class OrchaFlow:
                 cwd=worktree_path,
                 thinking_level=parsed.thinking_level,
                 failure_context="stopping before review/commit/PR",
+                step_label="pi initial agent",
             )
 
         initial_commit_count = self.repository.count_commits(base_rev, worktree_path)
@@ -117,6 +137,7 @@ class OrchaFlow:
             thinking_level="high",
             failure_context="stopping before commit/PR",
             label="pi review",
+            step_label="pi review agent",
         )
 
         post_review_state_hash = self.repository.state_hash(worktree_path)
@@ -158,6 +179,31 @@ class OrchaFlow:
             main_worktree=main_worktree,
             default_branch=default_branch,
             worktree_path=worktree_path,
+        )
+
+    def start_session_logging(self, argv: list[str]) -> None:
+        """Create and announce the per-run session log."""
+
+        try:
+            self.session_logger = SessionLogger.create(argv)
+        except OSError as error:
+            echo_err(f"orcha: session logging disabled: {error}")
+            return
+
+        set_session_logger(self.session_logger)
+        self.runner.set_logger(self.session_logger)
+        echo_out(f"orcha: session log: {self.session_logger.path}")
+
+    def log_parsed_args(self, parsed: ParsedArgs) -> None:
+        """Record parsed CLI args in the session log."""
+
+        if self.session_logger is None:
+            return
+        self.session_logger.event(
+            "parsed args: "
+            f"attempts={parsed.max_attempts} thinking={parsed.thinking_level} "
+            f"branch={parsed.branch!r} prompt={parsed.prompt!r} "
+            f"interactive={parsed.interactive}"
         )
 
     def generate_commit_message(
@@ -223,6 +269,10 @@ class OrchaFlow:
         checks_poll_interval_seconds = env_int("ORCHA_CHECKS_POLL_INTERVAL_SECONDS", 10)
 
         for attempt in range(1, parsed.max_attempts + 1):
+            if self.session_logger is not None:
+                self.session_logger.separator(
+                    f"PR ATTEMPT {attempt}/{parsed.max_attempts}"
+                )
             echo_out(f"orcha: PR attempt {attempt}/{parsed.max_attempts}")
             commit_title = self.repository.commit_dirty_automated_feedback(
                 worktree_path, commit_title
@@ -390,6 +440,7 @@ class OrchaFlow:
             cwd=worktree_path,
             thinking_level=followup_thinking_level,
             failure_context="while fixing CI",
+            step_label="pi CI fix agent",
         )
 
         return self.bump_after_review_rejected_followup(followup_thinking_level)
@@ -417,6 +468,7 @@ class OrchaFlow:
             cwd=worktree_path,
             thinking_level=followup_thinking_level,
             failure_context="while resolving rebase",
+            step_label="pi rebase fix agent",
         )
 
         return followup_thinking_level
@@ -474,14 +526,25 @@ class OrchaFlow:
         if prompt:
             pi_args.append(prompt)
 
+        log_step = "pi interactive session"
+        if self.session_logger is not None:
+            self.session_logger.step_start(log_step, cwd=cwd)
+            self.session_logger.event(
+                f"pi thinking level: {thinking_level or '(default)'}"
+            )
+
         echo_out(
             "orcha: launching interactive pi session; exit pi to resume review/PR flow"
         )
         pi_result = self.runner.run_interactive(pi_args, cwd=cwd)
         if pi_result.returncode == 0:
+            if self.session_logger is not None:
+                self.session_logger.step_pass(log_step)
             echo_out("orcha: interactive pi session exited; resuming review/PR flow")
             return
 
+        if self.session_logger is not None:
+            self.session_logger.step_fail(log_step, pi_result.returncode)
         write_command_output(pi_result)
         echo_err(
             f"orcha: pi exited with status {pi_result.returncode}; "
@@ -497,6 +560,7 @@ class OrchaFlow:
         thinking_level: str,
         failure_context: str,
         label: str = "pi",
+        step_label: str | None = None,
     ) -> None:
         """Run pi with a prompt, preserving Orcha's failure handling."""
 
@@ -505,10 +569,21 @@ class OrchaFlow:
             pi_args.extend(["--thinking", thinking_level])
         pi_args.extend(["-p", prompt])
 
+        log_step = step_label or label
+        if self.session_logger is not None:
+            self.session_logger.step_start(log_step, cwd=cwd)
+            self.session_logger.event(
+                f"pi thinking level: {thinking_level or '(default)'}"
+            )
+
         pi_result = self.runner.run(pi_args, cwd=cwd)
         if pi_result.returncode == 0:
+            if self.session_logger is not None:
+                self.session_logger.step_pass(log_step)
             return
 
+        if self.session_logger is not None:
+            self.session_logger.step_fail(log_step, pi_result.returncode)
         write_command_output(pi_result)
         separator = " " if failure_context.startswith("while ") else "; "
         echo_err(

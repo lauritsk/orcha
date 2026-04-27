@@ -5,6 +5,7 @@ local linters = new Mapping<String, Step> {
   ["ruff"] = Builtins.ruff
   ["ruff-format"] = Builtins.ruff_format
   ["ty"] = Builtins.ty
+  ["mise"] = Builtins.mise
   ["pkl"] = Builtins.pkl
   ["pkl-format"] = Builtins.pkl_format
   ["tombi"] = Builtins.tombi
@@ -31,9 +32,7 @@ hooks {
   }
   ["commit-msg"] {
     steps {
-      ["cocogitto-commit-msg"] {
-        check = "cog --quiet verify --file {{commit_msg_file}}"
-      }
+      ["cocogitto-commit-msg"] = Builtins.cocogitto_commit_msg
     }
   }
 }

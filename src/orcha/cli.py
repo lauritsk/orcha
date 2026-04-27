@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Annotated
 
 import typer
 
+from orcha.config import load_config
+from orcha.errors import OrchaAbort
 from orcha.workflow import run_orcha
 
 APP_CONTEXT = {
@@ -27,7 +30,24 @@ def main(
             metavar="[session] [ATTEMPTS] [THINKING] BRANCH [PROMPT...]",
         ),
     ] = None,
+    config: Annotated[
+        Path | None,
+        typer.Option(
+            "--config",
+            "-c",
+            help="Path to config.toml (default: XDG/macOS config location).",
+            exists=False,
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+            resolve_path=True,
+        ),
+    ] = None,
 ) -> None:
     """Run Orcha."""
     raw_args = [*(args or []), *ctx.args]
-    raise typer.Exit(run_orcha(raw_args))
+    try:
+        loaded_config = load_config(config)
+    except OrchaAbort as error:
+        raise typer.Exit(error.code) from error
+    raise typer.Exit(run_orcha(raw_args, config=loaded_config))

@@ -3,17 +3,19 @@
 Orcha is a small CLI that orchestrates an AI coding agent through a full
 GitHub pull request lifecycle.
 
-It creates an isolated git worktree, runs `pi` on your request, asks `pi` to
-review the result, asks `pi` to generate a Conventional Commit title plus
-Markdown description from the completed diff, commits changes as one generated
-message commit, opens or updates a pull request with the same title/body, waits
-for checks, asks `pi` to fix failures, refreshes the PR message after follow-up
-changes, retries when needed, squash-merges the PR, and cleans up the worktree.
+It creates an isolated git worktree, runs a configured agent on your request,
+asks the agent to review the result, asks the agent to generate a Conventional
+Commit title plus Markdown description from the completed diff, commits changes
+as one generated-message commit, opens or updates a pull request with the same
+title/body, waits for checks, asks the agent to fix failures, refreshes the PR
+message after follow-up changes, retries when needed, squash-merges the PR, and
+cleans up the worktree.
 
 ## Features
 
 - Creates a clean branch in a sibling git worktree.
-- Runs either non-interactive `pi -p` or an interactive `pi` session.
+- Runs either a configured non-interactive agent command or an interactive agent
+  session.
 - Resumes automation after the interactive session exits.
 - Performs an automated review pass across committed and uncommitted work,
   including a check that relevant documentation was updated for code,
@@ -29,7 +31,8 @@ changes, retries when needed, squash-merges the PR, and cleans up the worktree.
 
 - Python 3.14 or newer
 - Git
-- [`pi`](https://github.com/lauritsk/pi) available on `PATH`
+- A configured coding-agent CLI available on `PATH` (defaults to
+  [`pi`](https://github.com/lauritsk/pi))
 - [`gh`](https://cli.github.com/) authenticated for the target repository
 - [`cog`](https://github.com/cocogitto/cocogitto) available on `PATH`
 - `mise` is optional at runtime; when present, Orcha runs `mise trust .` in
@@ -65,11 +68,11 @@ Arguments:
 
 | Argument | Default | Description |
 | --- | --- | --- |
-| `session` | off | Use interactive `pi` instead of one-shot `pi -p`; Orcha resumes after `pi` exits. |
-| `ATTEMPTS` | `3` | Maximum agent rejection attempts. CI/check failures that require `pi` follow-up consume attempts; moved-base merge/rebase retries do not. Must be a positive integer. |
-| `THINKING` | `medium` | Initial `pi` thinking level: `low`, `medium`, `high`, or `xhigh`. |
+| `session` | off | Use an interactive agent command instead of the non-interactive template; Orcha resumes after the agent exits. |
+| `ATTEMPTS` | `3` | Maximum agent rejection attempts. CI/check failures that require agent follow-up consume attempts; moved-base merge/rebase retries do not. Must be a positive integer. |
+| `THINKING` | `medium` | Initial agent thinking level. Values come from `agent.thinking_levels`. |
 | `BRANCH` | required | New branch name to create. Must not already exist locally or on `origin`. |
-| `PROMPT...` | required for non-interactive; optional for `session` | Prompt passed to `pi -p`, or initial message for interactive `pi`. |
+| `PROMPT...` | required for non-interactive; optional for `session` | Prompt passed through the configured non-interactive agent template, or initial message for interactive mode. |
 
 Examples:
 
@@ -86,28 +89,121 @@ orcha session high feature/prototype-auth "explore auth UX options"
 1. Validates the branch name.
 2. Finds and updates the default branch in the main worktree.
 3. Creates a sibling worktree for the new branch.
-4. Runs `pi --thinking <level> -p <prompt>`, or interactive `pi` in
-   `session` mode.
-5. In `session` mode, waits until interactive `pi` exits.
-6. Runs a high-thinking `pi` review pass over committed and uncommitted work
-   that fixes incomplete, unsafe, incorrect, or undocumented work and updates
-   relevant docs when code, workflow, configuration, or behavior changed.
-7. Runs a high-thinking `pi` message pass that writes JSON metadata under the
-   worktree git directory only.
+4. Runs the configured non-interactive agent command with prompt and thinking
+   level, or runs the configured interactive agent command in `session` mode.
+5. In `session` mode, waits until the interactive agent exits.
+6. Runs a configured review-thinking agent review pass over committed and
+   uncommitted work that fixes incomplete, unsafe, incorrect, untested, or
+   undocumented work and updates relevant docs when code, workflow,
+   configuration, or behavior changed.
+7. Runs a configured review-thinking agent message pass that writes JSON
+   metadata under the worktree git directory only.
 8. Refuses to continue if the message pass changes the worktree, omits the
    JSON, writes invalid JSON, or produces an invalid Conventional Commit title.
 9. Squashes any agent-authored commits plus dirty changes into one commit with
    the generated title/body, opens or updates a PR with the same title/body,
    then waits for GitHub checks.
-10. If checks fail, asks `pi` to fix them, commits that feedback, regenerates the
-    PR title/body from the updated diff, and retries. These agent rejection
-    follow-ups consume `ATTEMPTS`.
+10. If checks fail, asks the agent to fix them, commits that feedback,
+    regenerates the PR title/body from the updated diff, and retries. These
+    agent rejection follow-ups consume `ATTEMPTS`.
 11. If squash merge fails because the base moved, rebases, regenerates the PR
     title/body when the branch changes, and retries without consuming
     `ATTEMPTS`.
-12. On confirmed merge, pulls the default branch and removes the worktree and branch.
+12. On confirmed merge, pulls the default branch and removes the worktree and
+    branch.
 
 ## Configuration
+
+Orcha loads TOML config from the platform default path, or from `--config PATH`.
+The default path is optional; an explicit `--config PATH` must exist.
+
+Default config paths:
+
+| Platform/env | Path |
+| --- | --- |
+| macOS | `~/Library/Application Support/orcha/config.toml` |
+| Linux/other Unix | `~/.config/orcha/config.toml` |
+| `XDG_CONFIG_HOME` set to an absolute path | `$XDG_CONFIG_HOME/orcha/config.toml` |
+
+Relative `XDG_CONFIG_HOME` values are ignored as required by the XDG Base
+Directory Specification.
+
+Only the agent command and launch behavior are configurable. Defaults are
+equivalent to:
+
+```toml
+[agent]
+command = ["pi"]
+non_interactive_args = ["--thinking", "{thinking}", "-p", "{prompt}"]
+interactive_args = ["--thinking", "{thinking}"]
+default_thinking = "medium"
+review_thinking = "high"
+thinking_levels = ["low", "medium", "high", "xhigh"]
+label = "agent"
+```
+
+`command` may be an array of strings or a shell-style string.
+`non_interactive_args` must be an array of strings, must include `{prompt}`, and
+may include `{thinking}`. `interactive_args` may include `{prompt}` and
+`{thinking}`; when it does not include `{prompt}`, Orcha appends the optional
+session prompt as a trailing argument. Those are the only supported template
+fields. Orcha never assumes a specific agent CLI internally; it only expands
+these templates.
+
+Example `pi` config:
+
+```toml
+[agent]
+command = ["pi"]
+non_interactive_args = ["--thinking", "{thinking}", "-p", "{prompt}"]
+interactive_args = ["--thinking", "{thinking}"]
+default_thinking = "medium"
+review_thinking = "high"
+thinking_levels = ["low", "medium", "high", "xhigh"]
+label = "pi"
+```
+
+Example OpenCode config:
+
+```toml
+[agent]
+command = ["opencode"]
+non_interactive_args = ["run", "--prompt", "{prompt}"]
+interactive_args = []
+default_thinking = "medium"
+review_thinking = "high"
+thinking_levels = ["low", "medium", "high", "xhigh"]
+label = "opencode"
+```
+
+Example Codex config:
+
+```toml
+[agent]
+command = ["codex"]
+non_interactive_args = ["exec", "--model-reasoning-effort", "{thinking}", "{prompt}"]
+interactive_args = []
+default_thinking = "medium"
+review_thinking = "high"
+thinking_levels = ["low", "medium", "high"]
+label = "codex"
+```
+
+Example Claude config:
+
+```toml
+[agent]
+command = ["claude"]
+non_interactive_args = ["-p", "{prompt}"]
+interactive_args = []
+default_thinking = "medium"
+review_thinking = "high"
+thinking_levels = ["low", "medium", "high", "xhigh"]
+label = "claude"
+```
+
+Agent CLI flags change over time; treat these as starting points and adjust the
+argument template for your installed agent version.
 
 Orcha reads these optional environment variables:
 
@@ -140,7 +236,7 @@ version and `mise run release:publish` to publish a tagged release.
 - `src/orcha/workflow.py` coordinates the high-level Orcha lifecycle.
 - `src/orcha/repository.py` wraps git, worktree, and commit operations.
 - `src/orcha/github.py` wraps GitHub CLI pull request operations.
-- `src/orcha/prompts.py` builds pi prompts and isolates untrusted output.
+- `src/orcha/prompts.py` builds agent prompts and isolates untrusted output.
 - `src/orcha/commands.py`, `output.py`, `parsing.py`, `utils.py`,
   `models.py`, and `errors.py` contain shared support code.
 - `tests/fakes.py` provides the fake command harness for flow tests.

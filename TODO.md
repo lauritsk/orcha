@@ -34,3 +34,5 @@
 - [x] Review attempts counting changes and tests
 - [x] Analyze Docker AI Sandboxes fit
 - [x] Write sbx implementation/cleanup plan
+- [x] Add edge-case tests and improve coverage
+- [x] Review edge-case test coverage work

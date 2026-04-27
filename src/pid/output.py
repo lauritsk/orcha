@@ -9,10 +9,11 @@ from pid.session_logging import SessionLogger
 
 from rich.console import Console
 from rich.panel import Panel
+from rich.rule import Rule
 from rich.table import Table
 from rich.text import Text
 
-from pid.models import CommandResult, CommitMessage
+from pid.models import CommandResult, CommitMessage, OutputMode, ParsedArgs
 
 OUT_CONSOLE = Console(highlight=False)
 _CURRENT_LOGGER: SessionLogger | None = None
@@ -63,6 +64,61 @@ def echo_err(message: str) -> None:
     if _CURRENT_LOGGER is not None:
         _CURRENT_LOGGER.output("stderr", message)
     print(message, file=sys.stderr)
+
+
+def print_run_summary(
+    parsed: ParsedArgs,
+    *,
+    agent_label: str,
+    forge_label: str,
+    output_mode: OutputMode,
+) -> None:
+    """Print a compact run summary before the workflow starts."""
+
+    if _CURRENT_LOGGER is not None:
+        _CURRENT_LOGGER.event(
+            "run summary: "
+            f"branch={parsed.branch} attempts={parsed.max_attempts} "
+            f"thinking={parsed.thinking_level} mode={output_mode.value}"
+        )
+    flow = "interactive session" if parsed.interactive else "non-interactive agent"
+    table = Table.grid(padding=(0, 1))
+    table.add_column(style="bold")
+    table.add_column()
+    table.add_row("branch", parsed.branch)
+    table.add_row("attempts", str(parsed.max_attempts))
+    table.add_row("thinking", parsed.thinking_level)
+    table.add_row("flow", flow)
+    table.add_row("agent", agent_label)
+    table.add_row("forge", forge_label)
+    table.add_row("output", output_mode.value)
+    OUT_CONSOLE.print(
+        Panel.fit(
+            table,
+            title=Text("pid run", style="bold magenta"),
+            border_style="magenta",
+        )
+    )
+
+
+def print_phase(title: str, detail: str = "") -> None:
+    """Print a visual phase divider for long-running workflow sections."""
+
+    event = f"phase: {title}"
+    if detail:
+        event = f"{event} - {detail}"
+    if _CURRENT_LOGGER is not None:
+        _CURRENT_LOGGER.event(event)
+    label = Text(f" {title} ", style="bold cyan")
+    if detail:
+        label.append(f" {detail}", style="dim")
+    OUT_CONSOLE.print(Rule(label, style="cyan"))
+
+
+def print_attempt_header(attempt: int, max_attempts: int) -> None:
+    """Print a visual PR attempt divider."""
+
+    print_phase(f"PR attempt {attempt}/{max_attempts}")
 
 
 def print_commit_message(message: CommitMessage) -> None:

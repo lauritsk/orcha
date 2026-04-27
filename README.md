@@ -90,6 +90,11 @@ Options:
 | --- | --- | --- |
 | `--output normal\|agent\|all` | `normal` | Console detail level. `normal` shows progress, successful agent stdout summaries, and failures. `agent` also shows successful agent stderr. `all` shows successful output from every captured command. Full command logs are always written to the session log. |
 
+During a run, pid prints a Rich summary panel for branch, attempts, thinking
+level, flow, agent, forge, and output mode. Long-running sections are separated
+with phase dividers such as Prepare, Agent, Review, Message + commit, and each
+PR attempt.
+
 Examples:
 
 ```sh

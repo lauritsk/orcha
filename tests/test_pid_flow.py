@@ -407,6 +407,37 @@ def test_normal_output_shows_agent_stdout_and_step_finish(tmp_path: Path) -> Non
     assert "hidden review stderr" not in process.stderr
 
 
+def test_structured_output_shows_run_summary_and_phase_headers(
+    tmp_path: Path,
+) -> None:
+    state = base_state(tmp_path)
+
+    process, _ = run_pid(
+        tmp_path,
+        ["2", "high", "feature/cool-stuff", "build", "thing"],
+        state=state,
+    )
+
+    assert_success(process)
+    assert "pid run" in process.stdout
+    assert "branch" in process.stdout
+    assert "feature/cool-stuff" in process.stdout
+    assert "attempts 2" in process.stdout
+    assert "thinking high" in process.stdout
+    assert "non-interactive agent" in process.stdout
+    assert "forge    github" in process.stdout
+    assert "output   normal" in process.stdout
+    assert "Prepare" in process.stdout
+    assert "validate repo, branch, tools" in process.stdout
+    assert "Agent" in process.stdout
+    assert "create initial changes" in process.stdout
+    assert "Review" in process.stdout
+    assert "uncommitted changes" in process.stdout
+    assert "Message + commit" in process.stdout
+    assert "generate metadata and create commit" in process.stdout
+    assert "PR attempt 1/2" in process.stdout
+
+
 def test_agent_output_mode_shows_successful_agent_stderr(tmp_path: Path) -> None:
     state = base_state(
         tmp_path,

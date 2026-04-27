@@ -17,8 +17,11 @@ from pid.models import CommandResult, CommitMessage, OutputMode, ParsedArgs
 from pid.output import (
     echo_err,
     echo_out,
+    print_attempt_header,
     print_commit_message,
     print_merge_success,
+    print_phase,
+    print_run_summary,
     set_session_logger,
     write_collected,
     write_command_output,
@@ -87,8 +90,15 @@ class PIDFlow:
         self.start_session_logging(argv)
         self.start_keep_awake()
         self.log_parsed_args(parsed)
+        print_run_summary(
+            parsed,
+            agent_label=self.config.agent.label,
+            forge_label=self.config.forge.label,
+            output_mode=self.output_mode,
+        )
         followup_thinking_level = parsed.thinking_level
 
+        print_phase("Prepare", "validate repo, branch, tools")
         validate_branch_name(self.runner, parsed.branch)
 
         repo_root = self.resolve_repo_root()
@@ -125,6 +135,7 @@ class PIDFlow:
         if self.config.workflow.trust_mise and shutil.which("mise") is not None:
             self.runner.require(["mise", "trust", "."], cwd=worktree_path)
 
+        print_phase("Agent", "create initial changes")
         if parsed.interactive:
             self.run_agent_session(
                 parsed.interactive_prompt,
@@ -149,6 +160,7 @@ class PIDFlow:
         review_target = review_target_for(
             base_rev, initial_commit_count, has_output(initial_dirty)
         )
+        print_phase("Review", review_target.replace("_", " "))
         review_prompt = build_review_prompt(
             original_prompt=parsed.prompt,
             review_target=review_target,
@@ -181,6 +193,7 @@ class PIDFlow:
             echo_out("pid: no changes or commits after agent; stopping before PR")
             abort(0)
 
+        print_phase("Message + commit", "generate metadata and create commit")
         commit_message = self.generate_commit_message(
             parsed=parsed,
             base_rev=base_rev,
@@ -329,6 +342,7 @@ class PIDFlow:
                 self.session_logger.separator(
                     f"PR ATTEMPT {attempt}/{parsed.max_attempts}"
                 )
+            print_attempt_header(attempt, parsed.max_attempts)
             echo_out(f"pid: PR attempt {attempt}/{parsed.max_attempts}")
             commit_title = self.repository.commit_dirty_automated_feedback(
                 worktree_path,

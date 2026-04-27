@@ -267,8 +267,11 @@ class OrchaFlow:
         message_state_hash = self.repository.state_hash(worktree_path)
         checks_timeout_seconds = env_int("ORCHA_CHECKS_TIMEOUT_SECONDS", 1800)
         checks_poll_interval_seconds = env_int("ORCHA_CHECKS_POLL_INTERVAL_SECONDS", 10)
+        merge_retry_limit = env_int("ORCHA_MERGE_RETRY_LIMIT", 20)
+        merge_retries = 0
+        attempt = 1
 
-        for attempt in range(1, parsed.max_attempts + 1):
+        while attempt <= parsed.max_attempts:
             if self.session_logger is not None:
                 self.session_logger.separator(
                     f"PR ATTEMPT {attempt}/{parsed.max_attempts}"
@@ -335,6 +338,8 @@ class OrchaFlow:
                         followup_thinking_level=followup_thinking_level,
                         worktree_path=worktree_path,
                     )
+                    attempt += 1
+                    merge_retries = 0
                     continue
 
             pr_head_oid = self.github.head_oid(parsed.branch, worktree_path)
@@ -373,16 +378,19 @@ class OrchaFlow:
                 )
                 return
 
-            if attempt >= parsed.max_attempts:
+            merge_retries += 1
+            if merge_retries > merge_retry_limit:
                 echo_err(
-                    f"orcha: github squash merge failed after {attempt} attempts; "
-                    f"leaving PR open: {pr_url}"
+                    "orcha: github squash merge failed after "
+                    f"{merge_retry_limit} merge retries; leaving PR open: {pr_url}"
                 )
                 abort(merge_result.returncode)
 
             echo_out(
                 "orcha: merge failed; rebasing onto latest "
-                f"origin/{default_branch} before retry"
+                f"origin/{default_branch} before retry "
+                f"({merge_retries}/{merge_retry_limit} merge retries; "
+                "agent attempts unchanged)"
             )
             self.runner.require(
                 ["git", "fetch", "origin", default_branch], cwd=worktree_path

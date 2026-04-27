@@ -21,7 +21,8 @@ changes, retries when needed, squash-merges the PR, and cleans up the worktree.
 - Generates the commit and PR title/body from the final reviewed work.
 - Verifies the generated commit title with `cog`.
 - Creates, updates, checks, retries, and squash-merges GitHub PRs with `gh`.
-- Handles CI failure follow-ups and moved-base rebase retries.
+- Handles CI failure follow-ups and moved-base rebase retries without charging
+  agent attempts.
 - Uses Rich output for key status panels.
 
 ## Requirements
@@ -65,7 +66,7 @@ Arguments:
 | Argument | Default | Description |
 | --- | --- | --- |
 | `session` | off | Use interactive `pi` instead of one-shot `pi -p`; Orcha resumes after `pi` exits. |
-| `ATTEMPTS` | `3` | Maximum PR/check/merge attempts. Must be a positive integer. |
+| `ATTEMPTS` | `3` | Maximum agent rejection attempts. CI/check failures that require `pi` follow-up consume attempts; moved-base merge/rebase retries do not. Must be a positive integer. |
 | `THINKING` | `medium` | Initial `pi` thinking level: `low`, `medium`, `high`, or `xhigh`. |
 | `BRANCH` | required | New branch name to create. Must not already exist locally or on `origin`. |
 | `PROMPT...` | required for non-interactive; optional for `session` | Prompt passed to `pi -p`, or initial message for interactive `pi`. |
@@ -99,9 +100,11 @@ orcha session high feature/prototype-auth "explore auth UX options"
    the generated title/body, opens or updates a PR with the same title/body,
    then waits for GitHub checks.
 10. If checks fail, asks `pi` to fix them, commits that feedback, regenerates the
-    PR title/body from the updated diff, and retries.
+    PR title/body from the updated diff, and retries. These agent rejection
+    follow-ups consume `ATTEMPTS`.
 11. If squash merge fails because the base moved, rebases, regenerates the PR
-    title/body when the branch changes, and retries.
+    title/body when the branch changes, and retries without consuming
+    `ATTEMPTS`.
 12. On confirmed merge, pulls the default branch and removes the worktree and branch.
 
 ## Configuration
@@ -112,6 +115,7 @@ Orcha reads these optional environment variables:
 | --- | --- | --- |
 | `ORCHA_CHECKS_TIMEOUT_SECONDS` | `1800` | How long to wait for pending GitHub checks. |
 | `ORCHA_CHECKS_POLL_INTERVAL_SECONDS` | `10` | Delay between check polling attempts. |
+| `ORCHA_MERGE_RETRY_LIMIT` | `20` | Safety cap for moved-base merge/rebase retries that do not consume `ATTEMPTS`. |
 
 ## Development
 

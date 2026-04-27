@@ -122,10 +122,9 @@ class OrchaFlow:
         post_review_state_hash = self.repository.state_hash(worktree_path)
         if pre_review_state_hash != post_review_state_hash:
             self.review_rejected_first_pass = True
-            followup_thinking_level = bump_thinking(followup_thinking_level)
             echo_out(
-                "orcha: review changed first pass; follow-up pi thinking bumped to "
-                f"{followup_thinking_level}"
+                "orcha: review changed first pass; follow-up pi will keep "
+                f"thinking {followup_thinking_level}"
             )
 
         post_review_commit_count = self.repository.count_commits(
@@ -393,7 +392,7 @@ class OrchaFlow:
             failure_context="while fixing CI",
         )
 
-        return self.bump_after_followup(followup_thinking_level)
+        return self.bump_after_review_rejected_followup(followup_thinking_level)
 
     def fix_rebase(
         self,
@@ -420,7 +419,7 @@ class OrchaFlow:
             failure_context="while resolving rebase",
         )
 
-        return self.bump_after_followup(followup_thinking_level)
+        return followup_thinking_level
 
     def resolve_repo_root(self) -> str:
         """Return the current git repository root or abort with Orcha's message."""
@@ -518,10 +517,16 @@ class OrchaFlow:
         )
         abort(pi_result.returncode)
 
-    def bump_after_followup(self, followup_thinking_level: str) -> str:
+    def bump_after_review_rejected_followup(self, followup_thinking_level: str) -> str:
         if not self.review_rejected_first_pass or not followup_thinking_level:
             return followup_thinking_level
-        return bump_thinking(followup_thinking_level)
+        bumped_level = bump_thinking(followup_thinking_level)
+        if bumped_level != followup_thinking_level:
+            echo_out(
+                "orcha: review-rejected follow-up completed; next pi thinking bumped to "
+                f"{bumped_level}"
+            )
+        return bumped_level
 
     def finish_successful_merge(
         self,

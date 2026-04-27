@@ -54,8 +54,7 @@ class OrchaFlow:
         repo_root = self.resolve_repo_root()
         self.verify_commit_title(branch_commit_title)
 
-        require_command("pi", "orcha: pi is required")
-        require_command("gh", "orcha: gh is required for PR creation")
+        self.require_external_commands()
 
         main_worktree = self.resolve_main_worktree()
 
@@ -138,6 +137,12 @@ class OrchaFlow:
             default_branch=default_branch,
             worktree_path=worktree_path,
         )
+
+    def require_external_commands(self) -> None:
+        """Ensure external CLIs needed after commit-title validation exist."""
+
+        require_command("pi", "orcha: pi is required")
+        require_command("gh", "orcha: gh is required for PR creation")
 
     def run_pr_loop(
         self,

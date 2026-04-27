@@ -38,11 +38,15 @@ def build_review_prompt(*, original_prompt: str, review_target: str) -> str:
 
     return (
         "Review the work for this original request and fix anything incomplete, "
-        "incorrect, unsafe, or not matching the request. "
+        "incorrect, unsafe, undocumented, or not matching the request. "
         f"{review_target} "
         "Check whether required tests were added for new functionality, or "
         "updated to reflect code changes when necessary. If behavior changed "
         "and test coverage is missing or stale, add or update the tests. "
+        "Ensure all relevant documentation was updated for any code, CLI, "
+        "workflow, behavior, configuration, or user-facing changes. If docs are "
+        "missing or stale, update them yourself instead of merely rejecting the "
+        "work, unless the needed documentation cannot be determined safely. "
         "If fixes are needed, apply them. You may commit fixes yourself or leave "
         "them unstaged; orcha will commit dirty changes afterward. Keep the worktree "
         f"clean when possible. Original request: {original_prompt}"

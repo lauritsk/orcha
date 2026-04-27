@@ -350,6 +350,11 @@ def test_session_pi_failure_stops_before_review(tmp_path: Path) -> None:
             "Review the commits in base123..HEAD.",
         ),
         (
+            {"commit_count": 2, "worktree_dirty": " M file.txt\n"},
+            "Review the commits in base123..HEAD and the uncommitted changes "
+            "in this worktree.",
+        ),
+        (
             {"commit_count": 0, "worktree_dirty": " M file.txt\n"},
             "Review the uncommitted changes in this worktree.",
         ),
@@ -380,6 +385,8 @@ def test_review_prompt_targets_commits_dirty_or_empty_work(
     assert expected_review_target in review_call["prompt"]
     assert "Check whether required tests were added" in review_call["prompt"]
     assert "add or update the tests" in review_call["prompt"]
+    assert "Ensure all relevant documentation was updated" in review_call["prompt"]
+    assert "update them yourself instead of merely rejecting" in review_call["prompt"]
     assert "Original request: original request" in review_call["prompt"]
 
 

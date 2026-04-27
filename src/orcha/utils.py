@@ -35,6 +35,11 @@ def worktree_path_for(repo_root: str, branch: str) -> str:
 def review_target_for(base_rev: str, commit_count: int, dirty: bool) -> str:
     """Describe what the review pi pass should inspect."""
 
+    if commit_count > 0 and dirty:
+        return (
+            f"Review the commits in {base_rev}..HEAD and the uncommitted changes "
+            "in this worktree."
+        )
     if commit_count > 0:
         return f"Review the commits in {base_rev}..HEAD."
     if dirty:

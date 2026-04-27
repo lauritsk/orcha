@@ -16,6 +16,7 @@
 - [x] Add Rich visual output to CLI
 - [x] Refactor Python project structure
 - [x] Add plumbum command execution dependency
+- [x] Add docs update enforcement to review agent
 - [ ] Add higher-level orchestrator agent (see `ORCHESTRATOR_AGENT_PLAN.md`)
 - [x] Fix thinking bump on rebase conflict-only failures
 - [x] Ensure review agent checks required tests

@@ -15,7 +15,9 @@ changes, retries when needed, squash-merges the PR, and cleans up the worktree.
 - Creates a clean branch in a sibling git worktree.
 - Runs either non-interactive `pi -p` or an interactive `pi` session.
 - Resumes automation after the interactive session exits.
-- Performs an automated review pass before committing.
+- Performs an automated review pass across committed and uncommitted work,
+  including a check that relevant documentation was updated for code,
+  behavior, workflow, configuration, and user-facing changes.
 - Generates the commit and PR title/body from the final reviewed work.
 - Verifies the generated commit title with `cog`.
 - Creates, updates, checks, retries, and squash-merges GitHub PRs with `gh`.
@@ -86,7 +88,9 @@ orcha session high feature/prototype-auth "explore auth UX options"
 4. Runs `pi --thinking <level> -p <prompt>`, or interactive `pi` in
    `session` mode.
 5. In `session` mode, waits until interactive `pi` exits.
-6. Runs a high-thinking `pi` review pass.
+6. Runs a high-thinking `pi` review pass over committed and uncommitted work
+   that fixes incomplete, unsafe, incorrect, or undocumented work and updates
+   relevant docs when code, workflow, configuration, or behavior changed.
 7. Runs a high-thinking `pi` message pass that writes JSON metadata under the
    worktree git directory only.
 8. Refuses to continue if the message pass changes the worktree, omits the

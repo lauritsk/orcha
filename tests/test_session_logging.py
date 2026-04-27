@@ -74,6 +74,15 @@ def test_session_log_captures_agent_steps_commands_and_outputs(tmp_path: Path) -
     assert len(logs) == 1
     log = logs[0].read_text()
     assert "SESSION START" in log
+    assert (
+        "run summary: branch=feature/cool-stuff attempts=3 thinking=medium "
+        "mode=normal" in log
+    )
+    assert "phase: Prepare - validate repo, branch, tools" in log
+    assert "phase: Agent - create initial changes" in log
+    assert "phase: Review - Review the uncommitted changes in this worktree." in log
+    assert "phase: Message + commit - generate metadata and create commit" in log
+    assert "phase: PR attempt 1/3" in log
     assert "STEP START: agent initial" in log
     assert "COMMAND STDOUT" in log
     assert "agent did work" in log

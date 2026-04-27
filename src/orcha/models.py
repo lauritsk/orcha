@@ -22,3 +22,11 @@ class ParsedArgs:
     thinking_level: str
     branch: str
     prompt: str
+
+
+@dataclass(frozen=True)
+class CommitMessage:
+    """Commit and pull-request message generated from completed work."""
+
+    title: str
+    body: str

@@ -9,7 +9,8 @@ from pathlib import Path
 from orcha.commands import CommandRunner, require_command
 from orcha.errors import OrchaAbort, abort
 from orcha.github import GitHub
-from orcha.models import ParsedArgs
+from orcha.messages import parse_commit_message
+from orcha.models import CommitMessage, ParsedArgs
 from orcha.output import (
     echo_err,
     echo_out,
@@ -18,9 +19,10 @@ from orcha.output import (
     write_collected,
     write_command_output,
 )
-from orcha.parsing import bump_thinking, derive_commit_title, parse_args
+from orcha.parsing import bump_thinking, parse_args
 from orcha.prompts import (
     build_ci_fix_prompt,
+    build_message_prompt,
     build_rebase_fix_prompt,
     build_review_prompt,
 )
@@ -46,13 +48,11 @@ class OrchaFlow:
 
     def _run(self, argv: list[str]) -> None:
         parsed = parse_args(argv)
-        branch_commit_title = derive_commit_title(parsed.branch)
         followup_thinking_level = parsed.thinking_level
 
         validate_branch_name(self.runner, parsed.branch)
 
         repo_root = self.resolve_repo_root()
-        self.verify_commit_title(branch_commit_title)
 
         self.require_external_commands()
 
@@ -121,16 +121,32 @@ class OrchaFlow:
                 f"{followup_thinking_level}"
             )
 
-        self.repository.commit_initial_changes(
-            base_rev, worktree_path, branch_commit_title
+        post_review_commit_count = self.repository.count_commits(
+            base_rev, worktree_path
         )
+        post_review_dirty = self.repository.output(
+            ["status", "--porcelain", "--untracked-files=all"], cwd=worktree_path
+        )
+        if post_review_commit_count == 0 and not has_output(post_review_dirty):
+            echo_out("orcha: no changes or commits after pi; stopping before PR")
+            abort(0)
+
+        commit_message = self.generate_commit_message(
+            parsed=parsed,
+            base_rev=base_rev,
+            worktree_path=worktree_path,
+        )
+        self.verify_commit_title(commit_message)
+
+        self.repository.commit_initial_changes(base_rev, worktree_path, commit_message)
         commit_title = self.repository.output(
             ["log", "-1", "--format=%s"], cwd=worktree_path
         ).strip()
 
         self.run_pr_loop(
             parsed=parsed,
-            branch_commit_title=branch_commit_title,
+            base_rev=base_rev,
+            commit_message=commit_message,
             commit_title=commit_title,
             followup_thinking_level=followup_thinking_level,
             main_worktree=main_worktree,
@@ -138,9 +154,47 @@ class OrchaFlow:
             worktree_path=worktree_path,
         )
 
-    def require_external_commands(self) -> None:
-        """Ensure external CLIs needed after commit-title validation exist."""
+    def generate_commit_message(
+        self, *, parsed: ParsedArgs, base_rev: str, worktree_path: str
+    ) -> CommitMessage:
+        """Ask pi to write validated commit/PR metadata without changing worktree."""
 
+        git_dir = self.repository.output(
+            ["rev-parse", "--path-format=absolute", "--git-dir"], cwd=worktree_path
+        ).strip()
+        output_path = Path(git_dir, "orcha-message.json")
+        output_path.unlink(missing_ok=True)
+        pre_message_state_hash = self.repository.state_hash(worktree_path)
+
+        self.run_pi_prompt(
+            build_message_prompt(
+                original_prompt=parsed.prompt,
+                branch=parsed.branch,
+                base_rev=base_rev,
+                output_path=str(output_path),
+            ),
+            cwd=worktree_path,
+            thinking_level="high",
+            failure_context="stopping before commit/PR",
+            label="pi message",
+        )
+
+        post_message_state_hash = self.repository.state_hash(worktree_path)
+        if pre_message_state_hash != post_message_state_hash:
+            echo_err(
+                "orcha: pi message changed the worktree; stopping before commit/PR"
+            )
+            abort(1)
+        if not output_path.exists():
+            echo_err("orcha: pi message did not write commit metadata")
+            abort(1)
+
+        return parse_commit_message(output_path.read_text())
+
+    def require_external_commands(self) -> None:
+        """Ensure external CLIs needed for the orchestration flow exist."""
+
+        require_command("cog", "orcha: cog is required for commit message verification")
         require_command("pi", "orcha: pi is required")
         require_command("gh", "orcha: gh is required for PR creation")
 
@@ -148,7 +202,8 @@ class OrchaFlow:
         self,
         *,
         parsed: ParsedArgs,
-        branch_commit_title: str,
+        base_rev: str,
+        commit_message: CommitMessage,
         commit_title: str,
         followup_thinking_level: str,
         main_worktree: str,
@@ -157,6 +212,7 @@ class OrchaFlow:
     ) -> None:
         need_force_push = False
         pr_url = ""
+        message_state_hash = self.repository.state_hash(worktree_path)
         checks_timeout_seconds = env_int("ORCHA_CHECKS_TIMEOUT_SECONDS", 1800)
         checks_poll_interval_seconds = env_int("ORCHA_CHECKS_POLL_INTERVAL_SECONDS", 10)
 
@@ -165,6 +221,15 @@ class OrchaFlow:
             commit_title = self.repository.commit_dirty_automated_feedback(
                 worktree_path, commit_title
             )
+            current_state_hash = self.repository.state_hash(worktree_path)
+            if current_state_hash != message_state_hash:
+                commit_message = self.generate_commit_message(
+                    parsed=parsed,
+                    base_rev=base_rev,
+                    worktree_path=worktree_path,
+                )
+                self.verify_commit_title(commit_message)
+                message_state_hash = self.repository.state_hash(worktree_path)
 
             if need_force_push:
                 self.runner.require(
@@ -184,8 +249,8 @@ class OrchaFlow:
                     ["git", "push", "-u", "origin", parsed.branch], cwd=worktree_path
                 )
 
-            self.github.ensure_pr(parsed.branch, branch_commit_title, worktree_path)
-            pr_title = branch_commit_title
+            self.github.ensure_pr(parsed.branch, commit_message, worktree_path)
+            pr_title = commit_message.title
             pr_url = self.github.pr_url(parsed.branch, worktree_path)
 
             checks_status, checks_out = self.github.wait_for_checks(
@@ -220,7 +285,7 @@ class OrchaFlow:
             merge_result = self.github.squash_merge(
                 parsed.branch,
                 pr_head_oid,
-                pr_title,
+                commit_message,
                 worktree_path,
             )
             if has_output(merge_result.stdout):
@@ -377,13 +442,12 @@ class OrchaFlow:
         echo_err(error_message)
         abort(1)
 
-    def verify_commit_title(self, branch_commit_title: str) -> None:
-        """Verify the derived commit title with cocogitto."""
+    def verify_commit_title(self, commit_message: CommitMessage) -> None:
+        """Verify the generated commit title with cocogitto."""
 
-        require_command("cog", "orcha: cog is required for commit message verification")
-        print_commit_message(branch_commit_title)
+        print_commit_message(commit_message)
         cog_result = self.runner.run(
-            ["cog", "verify", branch_commit_title], combine_output=True
+            ["cog", "verify", commit_message.title], combine_output=True
         )
         if cog_result.returncode != 0:
             write_collected(cog_result.stdout, stream=sys.stderr)

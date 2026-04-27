@@ -19,6 +19,7 @@ SRC = ROOT / "src"
 FAKE_COMMAND = r"""
 import json
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -196,12 +197,19 @@ def cmd_git(state, original_args):
     if args == ["add", "-A"]:
         finish(state)
 
+    if args[:2] == ["reset", "--soft"]:
+        state["commit_count"] = 0
+        state["head"] = args[2]
+        finish(state)
+
     if args[:2] == ["commit", "-m"]:
         if state.get("commit_fail"):
             finish(state, 1, err="commit failed")
         title = args[2]
+        body = args[4] if len(args) >= 5 and args[3] == "-m" else ""
         state["last_commit_title"] = title
         state.setdefault("commit_messages", []).append(title)
+        state.setdefault("commit_bodies", []).append(body)
         state["commit_count"] = max(1, int(state.get("commit_count", 0)) + 1)
         if state.get("dirty_after_commit"):
             state["worktree_dirty"] = state.get("dirty_after_commit_value", " M still-dirty\n")
@@ -214,7 +222,7 @@ def cmd_git(state, original_args):
         if state.get("dirty_after_log_once") and not state.get("dirty_after_log_used"):
             state["dirty_after_log_used"] = True
             state["worktree_dirty"] = state["dirty_after_log_once"]
-        finish(state, 0, state.get("last_commit_title", state.get("branch_commit_title", "chore: work")))
+        finish(state, 0, state.get("last_commit_title", state.get("generated_commit_title", "chore: work")))
 
     if args and args[0] == "push":
         if state.get("push_fail"):
@@ -244,7 +252,7 @@ def cmd_git(state, original_args):
 def cmd_cog(state, args):
     if args[:1] == ["verify"]:
         title = args[1]
-        state["branch_commit_title"] = title
+        state["verified_commit_title"] = title
         if state.get("cog_fail"):
             finish(state, int(state.get("cog_status", 2)), err="bad conventional commit")
         finish(state, 0, state.get("cog_out", ""))
@@ -305,6 +313,7 @@ def cmd_gh(state, args):
             finish(state, 1, err="pr create failed")
         state["pr_exists"] = True
         state["pr_title"] = args[args.index("--title") + 1]
+        state["pr_body"] = args[args.index("--body") + 1]
         finish(state, 0, state.get("pr_url", "https://example.invalid/pr/1"))
 
     if args[:2] == ["pr", "edit"]:
@@ -312,6 +321,7 @@ def cmd_gh(state, args):
             finish(state, 1, err="pr edit failed")
         state["pr_exists"] = True
         state["pr_title"] = args[args.index("--title") + 1]
+        state["pr_body"] = args[args.index("--body") + 1]
         finish(state)
 
     if args[:2] == ["pr", "checks"]:
@@ -319,6 +329,8 @@ def cmd_gh(state, args):
         finish(state, int(item.get("status", 0)), item.get("out", ""), item.get("err", ""))
 
     if args[:2] == ["pr", "merge"]:
+        state["merge_subject"] = args[args.index("--subject") + 1]
+        state["merge_body"] = args[args.index("--body") + 1]
         item = merge_item(state)
         finish(state, int(item.get("status", 0)), item.get("out", ""), item.get("err", ""))
 
@@ -341,6 +353,8 @@ def cmd_pi(state, args):
     prompt = prompt_from_args(args)
     if prompt.startswith("Review the work"):
         kind = "review"
+    elif prompt.startswith("Write commit and pull request metadata"):
+        kind = "message"
     elif prompt.startswith("CI checks failed"):
         kind = "ci_fix"
     elif prompt.startswith("GitHub squash merge failed"):
@@ -363,6 +377,35 @@ def cmd_pi(state, args):
             state["worktree_diff"] = state.get("review_changed_diff", "review changed diff")
         if state.get("review_sets_dirty"):
             state["worktree_dirty"] = state["review_sets_dirty"]
+
+    if kind == "message":
+        match = re.search(r"^Output path: (.+)$", prompt, re.MULTILINE)
+        if not match:
+            finish(state, 43, err="missing output path")
+        output_path = Path(match.group(1))
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        message_index = int(state.get("message_index", 0))
+        state["message_index"] = message_index + 1
+        generated_messages = state.get("generated_messages", [])
+        if message_index < len(generated_messages):
+            generated_message = generated_messages[message_index]
+            title = generated_message.get("title", "feat: implement cool stuff")
+            body = generated_message.get(
+                "body",
+                "- Implements the requested cool stuff.\n- Updates tests and docs as needed.",
+            )
+        else:
+            title = state.get("generated_commit_title", "feat: implement cool stuff")
+            body = state.get(
+                "generated_commit_body",
+                "- Implements the requested cool stuff.\n- Updates tests and docs as needed.",
+            )
+        if not state.get("message_skip_output"):
+            output_path.write_text(
+                state.get("message_json", json.dumps({"title": title, "body": body}))
+            )
+        if state.get("message_agent_changes"):
+            state["worktree_dirty"] = state.get("message_agent_dirty", " M message-change\n")
 
     if kind == "ci_fix":
         state["worktree_dirty"] = state.get("dirty_after_ci_fix", " M ci-fix\n")

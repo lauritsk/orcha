@@ -4,16 +4,18 @@ Orcha is a small CLI that orchestrates an AI coding agent through a full
 GitHub pull request lifecycle.
 
 It creates an isolated git worktree, runs `pi` on your request, asks `pi` to
-review the result, commits changes with a Conventional Commit title derived
-from the branch name, opens or updates a pull request, waits for checks, asks
-`pi` to fix failures, retries when needed, squash-merges the PR, and cleans up
-the worktree.
+review the result, asks `pi` to generate a Conventional Commit title plus
+Markdown description from the completed diff, commits changes as one generated
+message commit, opens or updates a pull request with the same title/body, waits
+for checks, asks `pi` to fix failures, refreshes the PR message after follow-up
+changes, retries when needed, squash-merges the PR, and cleans up the worktree.
 
 ## Features
 
 - Creates a clean branch in a sibling git worktree.
 - Runs non-interactive `pi -p` with selectable thinking level.
 - Performs an automated review pass before committing.
+- Generates the commit and PR title/body from the final reviewed work.
 - Verifies the generated commit title with `cog`.
 - Creates, updates, checks, retries, and squash-merges GitHub PRs with `gh`.
 - Handles CI failure follow-ups and moved-base rebase retries.
@@ -73,25 +75,23 @@ orcha docs/update-install update installation instructions
 
 ## How it works
 
-1. Validates the branch name and derives a Conventional Commit title from it.
-2. Verifies the title with `cog verify`.
-3. Finds and updates the default branch in the main worktree.
-4. Creates a sibling worktree for the new branch.
-5. Runs `pi --thinking <level> -p <prompt>`.
-6. Runs a high-thinking `pi` review pass.
-7. Commits dirty changes, opens or updates a PR, then waits for GitHub checks.
-8. If checks fail, asks `pi` to fix them and retries.
-9. If squash merge fails because the base moved, rebases and retries.
-10. On confirmed merge, pulls the default branch and removes the worktree and branch.
-
-Branch names drive commit titles:
-
-| Branch | Commit title |
-| --- | --- |
-| `feature/add-api` | `feat: add api` |
-| `fix/ci-timeout` | `fix: ci timeout` |
-| `docs/update-readme` | `docs: update readme` |
-| `weird/add-thing` | `chore: weird add thing` |
+1. Validates the branch name.
+2. Finds and updates the default branch in the main worktree.
+3. Creates a sibling worktree for the new branch.
+4. Runs `pi --thinking <level> -p <prompt>`.
+5. Runs a high-thinking `pi` review pass.
+6. Runs a high-thinking `pi` message pass that writes JSON metadata under the
+   worktree git directory only.
+7. Refuses to continue if the message pass changes the worktree, omits the
+   JSON, writes invalid JSON, or produces an invalid Conventional Commit title.
+8. Squashes any agent-authored commits plus dirty changes into one commit with
+   the generated title/body, opens or updates a PR with the same title/body,
+   then waits for GitHub checks.
+9. If checks fail, asks `pi` to fix them, commits that feedback, regenerates the
+   PR title/body from the updated diff, and retries.
+10. If squash merge fails because the base moved, rebases, regenerates the PR
+    title/body when the branch changes, and retries.
+11. On confirmed merge, pulls the default branch and removes the worktree and branch.
 
 ## Configuration
 

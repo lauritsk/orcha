@@ -2,6 +2,16 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## [v0.2.0](https://github.com/lauritsk/orcha/compare/d3d4daceef76e2f1cd4bb2d124070fc479695cc6..v0.2.0) - 2026-04-27
+#### Features
+- add plumbum-backed command runner - ([001de9f](https://github.com/lauritsk/orcha/commit/001de9f88dfba40534f2d051953de1efd0223c62)) - Karl Hans Laurits
+#### Continuous Integration
+- enforce locked mise installs - ([d3d4dac](https://github.com/lauritsk/orcha/commit/d3d4daceef76e2f1cd4bb2d124070fc479695cc6)) - Karl Hans Laurits
+#### Miscellaneous Chores
+- namespace release tasks - ([6a5ac76](https://github.com/lauritsk/orcha/commit/6a5ac76a6d68f375a018ebda4810140292d14f39)) - Karl Hans Laurits
+
+- - -
+
 ## [v0.1.0](https://github.com/lauritsk/orcha/compare/73dbe570240f8eb6620eef0b13e98f6dd7463ea8..v0.1.0) - 2026-04-27
 #### Features
 - improve Typer CLI handling - ([3398fe4](https://github.com/lauritsk/orcha/commit/3398fe46f9d08d0814b94d39170227a6aff27d02)) - Karl Hans Laurits

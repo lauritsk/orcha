@@ -2,6 +2,20 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## [v0.6.0](https://github.com/lauritsk/pid/compare/171037d7bcf9787cb8cfb0166317d22ab8cc5408..v0.6.0) - 2026-04-27
+#### Features
+- improve CLI output structure and visuals - ([84ef18f](https://github.com/lauritsk/pid/commit/84ef18f3769841ec3d1e01b1e5adad04977cede7)) - Karl Hans Laurits
+#### Bug Fixes
+- update interactive prompts in place - ([d7faa07](https://github.com/lauritsk/pid/commit/d7faa07ba4192777402f423bf308e88c58e84491)) - Karl Hans Laurits
+#### Tests
+- run pytest suite in parallel - ([84ee385](https://github.com/lauritsk/pid/commit/84ee385ddce9727bd2068f8d30647e7c4c0fa495)) - Karl Hans Laurits
+#### Continuous Integration
+- ensure mise check passes before release - ([8644804](https://github.com/lauritsk/pid/commit/8644804a185304b4843c81efa97f75e6f4f9804e)) - Karl Hans Laurits
+#### Miscellaneous Chores
+- update pid tool here - ([171037d](https://github.com/lauritsk/pid/commit/171037d7bcf9787cb8cfb0166317d22ab8cc5408)) - Karl Hans Laurits
+
+- - -
+
 ## [v0.5.1](https://github.com/lauritsk/pid/compare/ee638f50697445bb865de1966c506d813958a707..v0.5.1) - 2026-04-27
 #### Bug Fixes
 - wait for merge confirmation before cleanup - ([6722767](https://github.com/lauritsk/pid/commit/6722767fef024892bb7783428057ab6d6ac49a23)) - Karl Hans Laurits

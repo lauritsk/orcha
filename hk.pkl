@@ -11,6 +11,7 @@ local linters = new Mapping<String, Step> {
   ["tombi"] = Builtins.tombi
   ["tombi-format"] = Builtins.tombi_format
   ["rumdl"] = Builtins.rumdl
+  ["actionlint"] = Builtins.actionlint
   ["goreleaser"] = new Step {
     glob = ".goreleaser.yaml"
     check = "goreleaser check"

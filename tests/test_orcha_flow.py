@@ -470,7 +470,7 @@ def run_orcha(
     env = os.environ.copy()
     env.update(
         {
-            "PATH": f"{bin_dir}:/usr/bin:/bin",
+            "PATH": str(bin_dir),
             "ORCHA_FAKE_STATE": str(state_path),
             "TERM": "dumb",
             "NO_COLOR": "1",

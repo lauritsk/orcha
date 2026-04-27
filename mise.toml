@@ -2,6 +2,7 @@
 HK_MISE = 1
 
 [tools]
+actionlint = "1.7.12"
 cocogitto = "7.0.0"
 cosign = "3.0.6"
 goreleaser = "2.15.4"

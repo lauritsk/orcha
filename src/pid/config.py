@@ -94,6 +94,8 @@ diagnostic_output_limit = 20000
 [workflow]
 checks_timeout_seconds = 1800
 checks_poll_interval_seconds = 10
+merge_confirmation_timeout_seconds = 1800
+merge_confirmation_poll_interval_seconds = 10
 merge_retry_limit = 20
 trust_mise = true
 base_refresh_enabled = true
@@ -369,6 +371,8 @@ class WorkflowConfig:
 
     checks_timeout_seconds: int = 1800
     checks_poll_interval_seconds: int = 10
+    merge_confirmation_timeout_seconds: int = 1800
+    merge_confirmation_poll_interval_seconds: int = 10
     merge_retry_limit: int = 20
     trust_mise: bool = True
     base_refresh_enabled: bool = True
@@ -814,6 +818,8 @@ def parse_workflow_config(data: Any, path: Path) -> WorkflowConfig:
     allowed = {
         "checks_timeout_seconds",
         "checks_poll_interval_seconds",
+        "merge_confirmation_timeout_seconds",
+        "merge_confirmation_poll_interval_seconds",
         "merge_retry_limit",
         "trust_mise",
         "base_refresh_enabled",
@@ -835,6 +841,22 @@ def parse_workflow_config(data: Any, path: Path) -> WorkflowConfig:
         data.get("checks_poll_interval_seconds", default.checks_poll_interval_seconds),
         path,
         "workflow.checks_poll_interval_seconds",
+    )
+    merge_confirmation_timeout_seconds = integer_value(
+        data.get(
+            "merge_confirmation_timeout_seconds",
+            default.merge_confirmation_timeout_seconds,
+        ),
+        path,
+        "workflow.merge_confirmation_timeout_seconds",
+    )
+    merge_confirmation_poll_interval_seconds = integer_value(
+        data.get(
+            "merge_confirmation_poll_interval_seconds",
+            default.merge_confirmation_poll_interval_seconds,
+        ),
+        path,
+        "workflow.merge_confirmation_poll_interval_seconds",
     )
     merge_retry_limit = integer_value(
         data.get("merge_retry_limit", default.merge_retry_limit),
@@ -872,6 +894,16 @@ def parse_workflow_config(data: Any, path: Path) -> WorkflowConfig:
         fail_config(path, "workflow.checks_timeout_seconds must be non-negative")
     if checks_poll_interval_seconds < 0:
         fail_config(path, "workflow.checks_poll_interval_seconds must be non-negative")
+    if merge_confirmation_timeout_seconds < 0:
+        fail_config(
+            path,
+            "workflow.merge_confirmation_timeout_seconds must be non-negative",
+        )
+    if merge_confirmation_poll_interval_seconds < 0:
+        fail_config(
+            path,
+            "workflow.merge_confirmation_poll_interval_seconds must be non-negative",
+        )
     if merge_retry_limit < 0:
         fail_config(path, "workflow.merge_retry_limit must be non-negative")
     if base_refresh_limit < 0:
@@ -888,6 +920,8 @@ def parse_workflow_config(data: Any, path: Path) -> WorkflowConfig:
     return WorkflowConfig(
         checks_timeout_seconds=checks_timeout_seconds,
         checks_poll_interval_seconds=checks_poll_interval_seconds,
+        merge_confirmation_timeout_seconds=merge_confirmation_timeout_seconds,
+        merge_confirmation_poll_interval_seconds=merge_confirmation_poll_interval_seconds,
         merge_retry_limit=merge_retry_limit,
         trust_mise=trust_mise,
         base_refresh_enabled=base_refresh_enabled,

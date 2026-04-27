@@ -174,6 +174,8 @@ def cmd_git(state, original_args):
     if args[:2] == ["worktree", "remove"]:
         force = "--force" in args
         path = args[-1]
+        if state.get("worktree_remove_force_fail") and force:
+            finish(state, 1, err="worktree remove failed")
         if state.get("worktree_remove_fail") and not force:
             finish(state, 1, err="worktree remove failed")
         shutil.rmtree(path, ignore_errors=True)
@@ -311,6 +313,12 @@ def cmd_gh(state, args):
         if rest == ["--json", "mergedAt", "--jq", ".mergedAt // \"\""]:
             if state.get("merged_at_query_fail"):
                 finish(state, 1, err="mergedAt query failed")
+            state["merged_at_queries"] = int(state.get("merged_at_queries", 0)) + 1
+            if "merged_at_sequence" in state:
+                sequence = state.get("merged_at_sequence", [])
+                value = sequence.pop(0) if sequence else ""
+                state["merged_at_sequence"] = sequence
+                finish(state, 0, value)
             if state.get("last_merge_status") == 0:
                 finish(state, 0, state.get("merged_at_after_success", "2026-01-01T00:00:00Z"))
             if state.get("merged_after_failed_merge"):
@@ -574,6 +582,8 @@ def run_pid(
     env_keys = {
         "checks_timeout_seconds": "PID_CHECKS_TIMEOUT_SECONDS",
         "checks_poll_interval_seconds": "PID_CHECKS_POLL_INTERVAL_SECONDS",
+        "merge_confirmation_timeout_seconds": "PID_MERGE_CONFIRMATION_TIMEOUT_SECONDS",
+        "merge_confirmation_poll_interval_seconds": "PID_MERGE_CONFIRMATION_POLL_INTERVAL_SECONDS",
         "merge_retry_limit": "PID_MERGE_RETRY_LIMIT",
     }
     for state_key, env_key in env_keys.items():

@@ -11,10 +11,12 @@ hk = "1.44.2"
 pkl = "0.31.1"
 ruff = "0.15.12"
 rumdl = "0.1.83"
+shellcheck = "0.11.0"
 syft = "1.43.0"
 tombi = "0.9.25"
 ty = "0.0.32"
 uv = "0.11.8"
+shfmt = "3.13.1"
 
 [hooks]
 postinstall = "hk install --mise"

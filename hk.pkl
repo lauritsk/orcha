@@ -13,6 +13,8 @@ local linters = new Mapping<String, Step> {
   ["rumdl"] = (Builtins.rumdl) {
     exclude = List("CHANGELOG.md")
   }
+  ["shellcheck"] = Builtins.shellcheck
+  ["shfmt"] = Builtins.shfmt
   ["actionlint"] = Builtins.actionlint
   ["goreleaser"] = new Step {
     glob = ".goreleaser.yaml"

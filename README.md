@@ -162,8 +162,9 @@ Inspection commands and options:
 11. If squash merge fails because the base moved, rebases, regenerates the PR
     title/body when the branch changes, and retries without consuming
     `ATTEMPTS`.
-12. On confirmed merge, pulls the default branch and removes the worktree and
-    branch.
+12. After the merge command succeeds, polls merge confirmation so queued or
+    auto-merge PRs can complete, then pulls the default branch and removes the
+    worktree and branch.
 
 ## Configuration
 
@@ -269,6 +270,8 @@ diagnostic_output_limit = 20000
 [workflow]
 checks_timeout_seconds = 1800
 checks_poll_interval_seconds = 10
+merge_confirmation_timeout_seconds = 1800
+merge_confirmation_poll_interval_seconds = 10
 merge_retry_limit = 20
 trust_mise = true
 base_refresh_enabled = true
@@ -306,6 +309,12 @@ rebases when the branch does not contain the latest default branch. Supported
 `after_checks`. Each stage refreshes at most once per run; `base_refresh_limit`
 caps total refresh rebases. When `after_checks` rebases, pid force-pushes,
 updates the PR, and waits for checks again before merging.
+
+After the merge command succeeds, pid requires `pr_merged_at_args` confirmation
+before it considers the run successful. If the forge queued the merge or enabled
+auto-merge, pid polls for up to `workflow.merge_confirmation_timeout_seconds`
+seconds before cleaning up. If confirmation times out, pid exits nonzero and
+leaves the PR/worktree for manual follow-up.
 
 Prompt templates must be non-blank and support these fields:
 
@@ -402,6 +411,8 @@ Environment variables override the matching paths or workflow config at runtime:
 | `PID_LOG_DIR` | platform state/log directory | Directory where pid writes session logs and where `pid sessions` reads them. |
 | `PID_CHECKS_TIMEOUT_SECONDS` | `workflow.checks_timeout_seconds` | How long to wait for pending checks. |
 | `PID_CHECKS_POLL_INTERVAL_SECONDS` | `workflow.checks_poll_interval_seconds` | Delay between check polling attempts. |
+| `PID_MERGE_CONFIRMATION_TIMEOUT_SECONDS` | `workflow.merge_confirmation_timeout_seconds` | How long to wait for queued/auto-merge confirmation before cleanup. |
+| `PID_MERGE_CONFIRMATION_POLL_INTERVAL_SECONDS` | `workflow.merge_confirmation_poll_interval_seconds` | Delay between merge-confirmation polling attempts. |
 | `PID_MERGE_RETRY_LIMIT` | `workflow.merge_retry_limit` | Safety cap for moved-base merge/rebase retries that do not consume `ATTEMPTS`. |
 
 ## Development

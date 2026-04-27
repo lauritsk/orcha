@@ -210,6 +210,8 @@ def test_prompts_workflow_and_commit_config_are_configurable(tmp_path: Path) -> 
             "workflow": {
                 "checks_timeout_seconds": 5,
                 "checks_poll_interval_seconds": 1,
+                "merge_confirmation_timeout_seconds": 7,
+                "merge_confirmation_poll_interval_seconds": 2,
                 "merge_retry_limit": 2,
                 "trust_mise": False,
                 "base_refresh_enabled": False,
@@ -226,6 +228,8 @@ def test_prompts_workflow_and_commit_config_are_configurable(tmp_path: Path) -> 
     assert config.prompts.review.startswith("CUSTOM REVIEW")
     assert config.prompts.diagnostic_output_limit == 12
     assert config.workflow.checks_timeout_seconds == 5
+    assert config.workflow.merge_confirmation_timeout_seconds == 7
+    assert config.workflow.merge_confirmation_poll_interval_seconds == 2
     assert config.workflow.trust_mise is False
     assert config.workflow.base_refresh_enabled is False
     assert config.workflow.base_refresh_stages == (
@@ -287,6 +291,10 @@ def test_invalid_agent_config_is_rejected(
         (
             {"workflow": {"base_refresh_limit": -1}},
             "workflow.base_refresh_limit must be non-negative",
+        ),
+        (
+            {"workflow": {"merge_confirmation_timeout_seconds": -1}},
+            "workflow.merge_confirmation_timeout_seconds must be non-negative",
         ),
         (
             {"workflow": {"base_refresh_stages": ["before_pr", "before_pr"]}},

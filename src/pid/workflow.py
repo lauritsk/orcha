@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 import sys
+import time
 from pathlib import Path
 
 from pid.commands import CommandRunner, require_command
@@ -888,19 +889,10 @@ class PIDFlow:
         branch: str,
         worktree_path: str,
     ) -> None:
-        merged_at_result = self.forge.merged_at(pr_url, worktree_path)
-        if merged_at_result.returncode != 0:
-            echo_err(
-                "pid: merge command succeeded, but merged state could not be "
-                f"confirmed; leaving PR/worktree for manual cleanup: {pr_url}"
-            )
+        if not self.wait_for_confirmed_merge(
+            pr_url=pr_url, worktree_path=worktree_path
+        ):
             abort(1)
-        if not merged_at_result.stdout.strip():
-            echo_out(
-                "pid: merge command succeeded, but PR is not merged yet; likely "
-                f"queued or auto-merge enabled. Leaving PR/worktree: {pr_url}"
-            )
-            return
 
         self.cleanup_and_print_success(
             pr_url=pr_url,
@@ -910,6 +902,59 @@ class PIDFlow:
             branch=branch,
             worktree_path=worktree_path,
         )
+
+    def wait_for_confirmed_merge(self, *, pr_url: str, worktree_path: str) -> bool:
+        """Wait until the forge reports a successful merge is actually merged."""
+
+        timeout_seconds = max(
+            0,
+            env_int(
+                "PID_MERGE_CONFIRMATION_TIMEOUT_SECONDS",
+                self.config.workflow.merge_confirmation_timeout_seconds,
+            ),
+        )
+        poll_interval_seconds = max(
+            0,
+            env_int(
+                "PID_MERGE_CONFIRMATION_POLL_INTERVAL_SECONDS",
+                self.config.workflow.merge_confirmation_poll_interval_seconds,
+            ),
+        )
+        deadline = time.monotonic() + timeout_seconds
+        announced_wait = False
+
+        while True:
+            merged_at_result = self.forge.merged_at(pr_url, worktree_path)
+            if merged_at_result.returncode != 0:
+                echo_err(
+                    "pid: merge command succeeded, but merged state could not be "
+                    f"confirmed; leaving PR/worktree for manual cleanup: {pr_url}"
+                )
+                return False
+            if merged_at_result.stdout.strip():
+                return True
+            if timeout_seconds <= 0 or time.monotonic() >= deadline:
+                echo_err(
+                    "pid: merge command succeeded, but PR was not confirmed "
+                    f"merged after {timeout_seconds} seconds; leaving PR/worktree: "
+                    f"{pr_url}"
+                )
+                return False
+
+            if not announced_wait:
+                echo_out(
+                    "pid: merge command succeeded, but PR is not merged yet; "
+                    "waiting up to "
+                    f"{timeout_seconds} seconds for merge confirmation"
+                )
+                announced_wait = True
+
+            sleep_seconds = min(
+                poll_interval_seconds if poll_interval_seconds > 0 else 0.1,
+                max(0.0, deadline - time.monotonic()),
+            )
+            if sleep_seconds > 0:
+                time.sleep(sleep_seconds)
 
     def cleanup_and_print_success(
         self,
@@ -928,9 +973,17 @@ class PIDFlow:
             ["git", "push", "origin", "--delete", branch], cwd=worktree_path
         )
         self.runner.require(
-            ["git", "-C", main_worktree, "worktree", "remove", worktree_path]
+            [
+                "git",
+                "-C",
+                main_worktree,
+                "worktree",
+                "remove",
+                "--force",
+                worktree_path,
+            ]
         )
-        self.runner.run(["git", "-C", main_worktree, "branch", "-D", branch])
+        self.runner.require(["git", "-C", main_worktree, "branch", "-D", branch])
         print_merge_success(pr_title, pr_url, self.config.forge.label)
 
 

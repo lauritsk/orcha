@@ -922,7 +922,9 @@ def test_existing_pr_no_checks_and_queued_merge(tmp_path: Path) -> None:
         pr_exists_before=True,
         checks_sequence=[{"status": 1, "out": "no checks reported"}],
         merge_sequence=[{"status": 0, "out": "merge queued"}],
-        merged_at_after_success="",
+        merged_at_sequence=["", "2026-01-01T00:00:00Z"],
+        merge_confirmation_timeout_seconds=1,
+        merge_confirmation_poll_interval_seconds=0,
     )
 
     process, final_state = run_pid(
@@ -931,7 +933,7 @@ def test_existing_pr_no_checks_and_queued_merge(tmp_path: Path) -> None:
 
     assert_success(process)
     assert "pid: no CI checks reported; continuing" in process.stdout
-    assert "likely queued or auto-merge enabled" in process.stdout
+    assert "waiting up to 1 seconds for merge confirmation" in process.stdout
     assert calls(final_state, "gh", "pr", "edit")
     assert not calls(final_state, "gh", "pr", "create")
 
@@ -1386,8 +1388,8 @@ def test_merge_failure_but_forge_reports_merged_cleans_up(tmp_path: Path) -> Non
     assert (
         "github reports PR merged despite local forge cleanup failure" in process.stdout
     )
-    assert ["worktree", "remove", final_state["worktree_path"]] in [
-        call["args"][-3:] for call in calls(final_state, "git")
+    assert ["worktree", "remove", "--force", final_state["worktree_path"]] in [
+        call["args"][-4:] for call in calls(final_state, "git")
     ]
 
 
@@ -1400,13 +1402,39 @@ def test_merge_confirmation_failure_returns_error(tmp_path: Path) -> None:
     assert "merged state could not be confirmed" in process.stderr
 
 
-def test_merge_success_without_merged_at_leaves_pr_for_queue(tmp_path: Path) -> None:
-    state = base_state(tmp_path, merged_at_after_success="")
+def test_merge_success_without_merged_at_times_out_and_reports_leftovers(
+    tmp_path: Path,
+) -> None:
+    state = base_state(
+        tmp_path,
+        merged_at_after_success="",
+        merge_confirmation_timeout_seconds=0,
+    )
 
     process, _ = run_pid(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
 
+    assert process.returncode == 1
+    assert "PR was not confirmed merged after 0 seconds" in process.stderr
+
+
+def test_merge_success_waits_for_queued_merge_then_cleans_up(tmp_path: Path) -> None:
+    state = base_state(
+        tmp_path,
+        merged_at_sequence=["", "2026-01-01T00:00:00Z"],
+        merge_confirmation_timeout_seconds=1,
+        merge_confirmation_poll_interval_seconds=0,
+    )
+
+    process, final_state = run_pid(
+        tmp_path, ["feature/cool-stuff", "prompt"], state=state
+    )
+
     assert_success(process)
-    assert "likely queued or auto-merge enabled" in process.stdout
+    assert "waiting up to 1 seconds for merge confirmation" in process.stdout
+    assert final_state["merged_at_queries"] == 2
+    assert ["worktree", "remove", "--force", final_state["worktree_path"]] in [
+        call["args"][-4:] for call in calls(final_state, "git")
+    ]
 
 
 def test_merge_retry_does_not_consume_agent_attempt(tmp_path: Path) -> None:
@@ -1441,7 +1469,7 @@ def test_merge_failure_after_retry_limit_leaves_pr_open(tmp_path: Path) -> None:
 
 
 def test_cleanup_worktree_remove_failure_is_reported(tmp_path: Path) -> None:
-    state = base_state(tmp_path, worktree_remove_fail=True)
+    state = base_state(tmp_path, worktree_remove_force_fail=True)
 
     process, _ = run_pid(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
 

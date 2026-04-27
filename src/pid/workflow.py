@@ -9,7 +9,7 @@ from pathlib import Path
 from pid.commands import CommandRunner, require_command
 from pid.config import PIDConfig
 from pid.errors import PIDAbort, abort
-from pid.github import GitHub
+from pid.github import Forge
 from pid.keepawake import KeepAwake
 from pid.messages import parse_commit_message
 from pid.models import CommitMessage, ParsedArgs
@@ -43,7 +43,7 @@ class PIDFlow:
         self.runner = runner or CommandRunner()
         self.config = config or PIDConfig()
         self.repository = Repository(self.runner)
-        self.github = GitHub(self.runner)
+        self.forge = Forge(self.runner, self.config.forge)
         self.review_rejected_first_pass = False
         self.session_logger: SessionLogger | None = None
         self.keep_awake: KeepAwake | None = None
@@ -100,7 +100,9 @@ class PIDFlow:
             )
             abort(1)
 
-        default_branch = self.repository.default_branch(main_worktree)
+        default_branch = self.repository.default_branch(
+            main_worktree, fallback=self.forge.default_branch
+        )
         self.repository.switch_and_update_default_branch(main_worktree, default_branch)
         base_rev = self.repository.output(
             ["rev-parse", "HEAD"], cwd=main_worktree
@@ -114,7 +116,7 @@ class PIDFlow:
 
         echo_out(f"Created {worktree_path} on branch {parsed.branch}")
 
-        if shutil.which("mise") is not None:
+        if self.config.workflow.trust_mise and shutil.which("mise") is not None:
             self.runner.require(["mise", "trust", "."], cwd=worktree_path)
 
         if parsed.interactive:
@@ -144,6 +146,7 @@ class PIDFlow:
         review_prompt = build_review_prompt(
             original_prompt=parsed.prompt,
             review_target=review_target,
+            template=self.config.prompts.review,
         )
         self.run_agent_prompt(
             review_prompt,
@@ -247,6 +250,7 @@ class PIDFlow:
                 branch=parsed.branch,
                 base_rev=base_rev,
                 output_path=str(output_path),
+                template=self.config.prompts.message,
             ),
             cwd=worktree_path,
             thinking_level=self.config.agent.review_thinking,
@@ -269,12 +273,20 @@ class PIDFlow:
     def require_external_commands(self) -> None:
         """Ensure external CLIs needed for the orchestration flow exist."""
 
-        require_command("cog", "pid: cog is required for commit message verification")
+        if self.config.commit.verifier_enabled:
+            require_command(
+                self.config.commit.executable,
+                f"pid: {self.config.commit.executable} is required for "
+                "commit message verification",
+            )
         require_command(
             self.config.agent.executable,
             f"pid: agent command is required: {self.config.agent.executable}",
         )
-        require_command("gh", "pid: gh is required for PR creation")
+        require_command(
+            self.config.forge.executable,
+            f"pid: {self.config.forge.executable} is required for PR creation",
+        )
 
     def run_pr_loop(
         self,
@@ -291,9 +303,16 @@ class PIDFlow:
         need_force_push = False
         pr_url = ""
         message_state_hash = self.repository.state_hash(worktree_path)
-        checks_timeout_seconds = env_int("PID_CHECKS_TIMEOUT_SECONDS", 1800)
-        checks_poll_interval_seconds = env_int("PID_CHECKS_POLL_INTERVAL_SECONDS", 10)
-        merge_retry_limit = env_int("PID_MERGE_RETRY_LIMIT", 20)
+        checks_timeout_seconds = env_int(
+            "PID_CHECKS_TIMEOUT_SECONDS", self.config.workflow.checks_timeout_seconds
+        )
+        checks_poll_interval_seconds = env_int(
+            "PID_CHECKS_POLL_INTERVAL_SECONDS",
+            self.config.workflow.checks_poll_interval_seconds,
+        )
+        merge_retry_limit = env_int(
+            "PID_MERGE_RETRY_LIMIT", self.config.workflow.merge_retry_limit
+        )
         merge_retries = 0
         attempt = 1
 
@@ -304,7 +323,9 @@ class PIDFlow:
                 )
             echo_out(f"pid: PR attempt {attempt}/{parsed.max_attempts}")
             commit_title = self.repository.commit_dirty_automated_feedback(
-                worktree_path, commit_title
+                worktree_path,
+                commit_title,
+                self.config.commit.automated_feedback_title,
             )
             current_state_hash = self.repository.state_hash(worktree_path)
             if current_state_hash != message_state_hash:
@@ -334,11 +355,11 @@ class PIDFlow:
                     ["git", "push", "-u", "origin", parsed.branch], cwd=worktree_path
                 )
 
-            self.github.ensure_pr(parsed.branch, commit_message, worktree_path)
+            self.forge.ensure_pr(parsed.branch, commit_message, worktree_path)
             pr_title = commit_message.title
-            pr_url = self.github.pr_url(parsed.branch, worktree_path)
+            pr_url = self.forge.pr_url(parsed.branch, worktree_path)
 
-            checks_status, checks_out = self.github.wait_for_checks(
+            checks_status, checks_out = self.forge.wait_for_checks(
                 parsed.branch,
                 checks_timeout_seconds,
                 checks_poll_interval_seconds,
@@ -347,7 +368,7 @@ class PIDFlow:
             if has_output(checks_out):
                 write_collected(checks_out, stream=sys.stdout)
             if checks_status != 0:
-                if "no checks" in checks_out.lower():
+                if self.forge.output_reports_no_checks(checks_out):
                     echo_out("pid: no CI checks reported; continuing")
                 elif attempt >= parsed.max_attempts:
                     echo_err(
@@ -368,11 +389,14 @@ class PIDFlow:
                     merge_retries = 0
                     continue
 
-            pr_head_oid = self.github.head_oid(parsed.branch, worktree_path)
-            merge_result = self.github.squash_merge(
+            pr_head_oid = ""
+            if self.config.forge.merge_uses_head_oid:
+                pr_head_oid = self.forge.head_oid(parsed.branch, worktree_path)
+            merge_result = self.forge.squash_merge(
                 parsed.branch,
                 pr_head_oid,
                 commit_message,
+                pr_url,
                 worktree_path,
             )
             if has_output(merge_result.stdout):
@@ -389,10 +413,10 @@ class PIDFlow:
                 )
                 return
 
-            if self.github.reports_merged(pr_url, worktree_path):
+            if self.forge.reports_merged(pr_url, worktree_path):
                 echo_out(
-                    "pid: GitHub reports PR merged despite local gh cleanup failure; "
-                    "cleaning up"
+                    f"pid: {self.config.forge.label} reports PR merged despite "
+                    "local forge cleanup failure; cleaning up"
                 )
                 self.cleanup_and_print_success(
                     pr_url=pr_url,
@@ -407,7 +431,7 @@ class PIDFlow:
             merge_retries += 1
             if merge_retries > merge_retry_limit:
                 echo_err(
-                    "pid: github squash merge failed after "
+                    f"pid: {self.config.forge.label} squash merge failed after "
                     f"{merge_retry_limit} merge retries; leaving PR open: {pr_url}"
                 )
                 abort(merge_result.returncode)
@@ -445,7 +469,9 @@ class PIDFlow:
                 abort(1)
 
             commit_title = self.repository.commit_rebase_changes(
-                worktree_path, commit_title
+                worktree_path,
+                commit_title,
+                self.config.commit.rebase_feedback_title,
             )
             need_force_push = True
 
@@ -469,6 +495,8 @@ class PIDFlow:
             pr_url=pr_url,
             commit_title=commit_title,
             checks_out=checks_out,
+            template=self.config.prompts.ci_fix,
+            diagnostic_output_limit=self.config.prompts.diagnostic_output_limit,
         )
         self.run_agent_prompt(
             prompt,
@@ -497,6 +525,9 @@ class PIDFlow:
             default_branch=default_branch,
             commit_title=commit_title,
             merge_out=merge_out,
+            forge_label=self.config.forge.label,
+            template=self.config.prompts.rebase_fix,
+            diagnostic_output_limit=self.config.prompts.diagnostic_output_limit,
         )
         self.run_agent_prompt(
             prompt,
@@ -536,15 +567,18 @@ class PIDFlow:
         abort(1)
 
     def verify_commit_title(self, commit_message: CommitMessage) -> None:
-        """Verify the generated commit title with cocogitto."""
+        """Verify the generated commit title with the configured verifier."""
 
         print_commit_message(commit_message)
-        cog_result = self.runner.run(
-            ["cog", "verify", commit_message.title], combine_output=True
+        if not self.config.commit.verifier_enabled:
+            return
+        verify_result = self.runner.run(
+            self.config.commit.verifier_command_line(title=commit_message.title),
+            combine_output=True,
         )
-        if cog_result.returncode != 0:
-            write_collected(cog_result.stdout, stream=sys.stderr)
-            abort(cog_result.returncode)
+        if verify_result.returncode != 0:
+            write_collected(verify_result.stdout, stream=sys.stderr)
+            abort(verify_result.returncode)
 
     def run_agent_session(
         self,
@@ -649,7 +683,7 @@ class PIDFlow:
         branch: str,
         worktree_path: str,
     ) -> None:
-        merged_at_result = self.github.merged_at(pr_url, worktree_path)
+        merged_at_result = self.forge.merged_at(pr_url, worktree_path)
         if merged_at_result.returncode != 0:
             echo_err(
                 "pid: merge command succeeded, but merged state could not be "
@@ -692,7 +726,7 @@ class PIDFlow:
             ["git", "-C", main_worktree, "worktree", "remove", worktree_path]
         )
         self.runner.run(["git", "-C", main_worktree, "branch", "-D", branch])
-        print_merge_success(pr_title, pr_url)
+        print_merge_success(pr_title, pr_url, self.config.forge.label)
 
 
 def run_pid(argv: list[str], *, config: PIDConfig | None = None) -> int:

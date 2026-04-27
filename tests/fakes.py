@@ -250,8 +250,11 @@ def cmd_git(state, original_args):
 
 
 def cmd_cog(state, args):
-    if args[:1] == ["verify"]:
-        title = args[1]
+    if args[:1] in (["verify"], ["check"]):
+        if "--message" in args:
+            title = args[args.index("--message") + 1]
+        else:
+            title = args[1]
         state["verified_commit_title"] = title
         if state.get("cog_fail"):
             finish(state, int(state.get("cog_status", 2)), err="bad conventional commit")
@@ -374,13 +377,14 @@ def thinking_from_args(args):
 
 def cmd_pi(state, args):
     prompt = prompt_from_args(args)
-    if prompt.startswith("Review the work"):
+    prompt_lower = prompt.lower()
+    if prompt.startswith("Review the work") or prompt.startswith("CUSTOM REVIEW"):
         kind = "review"
-    elif prompt.startswith("Write commit and pull request metadata"):
+    elif prompt.startswith("Write commit and pull request metadata") or "Output path:" in prompt:
         kind = "message"
-    elif prompt.startswith("CI checks failed"):
+    elif prompt.startswith("CI checks failed") or prompt.startswith("CUSTOM CI"):
         kind = "ci_fix"
-    elif prompt.startswith("GitHub squash merge failed"):
+    elif "squash merge failed" in prompt_lower or prompt.startswith("CUSTOM REBASE"):
         kind = "rebase_fix"
     else:
         kind = "initial"
@@ -468,7 +472,10 @@ def main():
     dispatch = {
         "git": cmd_git,
         "cog": cmd_cog,
+        "convco": cmd_cog,
         "gh": cmd_gh,
+        "glab": cmd_gh,
+        "tea": cmd_gh,
         "pi": cmd_pi,
         "agentx": cmd_pi,
         "mise": cmd_mise,
@@ -554,16 +561,17 @@ def run_pid(
             "PYTHONPATH": str(SRC),
             "HOME": str(tmp_path / "home"),
             "XDG_CONFIG_HOME": str(tmp_path / "xdg-config"),
-            "PID_CHECKS_TIMEOUT_SECONDS": str(
-                state.get("checks_timeout_seconds", 1800)
-            ),
-            "PID_CHECKS_POLL_INTERVAL_SECONDS": str(
-                state.get("checks_poll_interval_seconds", 0)
-            ),
             "PID_LOG_DIR": str(tmp_path / "logs"),
-            "PID_MERGE_RETRY_LIMIT": str(state.get("merge_retry_limit", 20)),
         }
     )
+    env_keys = {
+        "checks_timeout_seconds": "PID_CHECKS_TIMEOUT_SECONDS",
+        "checks_poll_interval_seconds": "PID_CHECKS_POLL_INTERVAL_SECONDS",
+        "merge_retry_limit": "PID_MERGE_RETRY_LIMIT",
+    }
+    for state_key, env_key in env_keys.items():
+        if state_key in state:
+            env[env_key] = str(state[state_key])
     runner = CliRunner()
     previous_cwd = os.getcwd()
     try:

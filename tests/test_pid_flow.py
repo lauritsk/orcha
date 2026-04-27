@@ -597,6 +597,206 @@ label = "agentx"
     assert agent_calls[1]["args"][:3] == ["run", "--mode", "deep"]
 
 
+def test_configured_forge_command_is_used_via_config_option(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        """
+[forge]
+command = ["glab"]
+label = "gitlab"
+""".strip()
+    )
+    state = base_state(tmp_path)
+
+    process, final_state = run_pid(
+        tmp_path,
+        ["--config", str(config_path), "feature/cool-stuff", "build", "thing"],
+        state=state,
+        commands=("git", "cog", "pi", "glab", "mise"),
+    )
+
+    assert_success(process)
+    assert "pid gitlab squash merged" in process.stdout
+    assert calls(final_state, "glab", "pr", "create")
+    assert calls(final_state, "glab", "pr", "merge")
+    assert not calls(final_state, "gh")
+
+
+def test_configured_commit_verifier_command_is_used_via_config_option(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        """
+[commit]
+verifier_command = ["convco"]
+verifier_args = ["check", "--message", "{title}"]
+""".strip()
+    )
+    state = base_state(tmp_path)
+
+    process, final_state = run_pid(
+        tmp_path,
+        ["--config", str(config_path), "feature/cool-stuff", "build", "thing"],
+        state=state,
+        commands=("git", "convco", "pi", "gh", "mise"),
+    )
+
+    assert_success(process)
+    assert ["check", "--message", "feat: implement cool stuff"] in [
+        call["args"] for call in calls(final_state, "convco")
+    ]
+    assert not calls(final_state, "cog")
+
+
+def test_commit_verifier_can_be_disabled_via_config_option(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        """
+[commit]
+verifier_args = []
+""".strip()
+    )
+    state = base_state(tmp_path)
+
+    process, final_state = run_pid(
+        tmp_path,
+        ["--config", str(config_path), "feature/cool-stuff", "build", "thing"],
+        state=state,
+        commands=("git", "pi", "gh", "mise"),
+    )
+
+    assert_success(process)
+    assert not calls(final_state, "cog")
+
+
+def test_workflow_config_controls_checks_and_mise_trust(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        """
+[workflow]
+checks_timeout_seconds = 0
+checks_poll_interval_seconds = 0
+trust_mise = false
+""".strip()
+    )
+    state = base_state(
+        tmp_path,
+        checks_sequence=[{"status": 8, "out": "still pending"}],
+    )
+
+    process, final_state = run_pid(
+        tmp_path,
+        ["--config", str(config_path), "1", "feature/cool-stuff", "prompt"],
+        state=state,
+    )
+
+    assert process.returncode == 8
+    assert "CI checks still pending after 0 seconds" in process.stderr
+    assert not calls(final_state, "mise")
+
+
+def test_workflow_config_controls_merge_retry_limit(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        """
+[workflow]
+merge_retry_limit = 0
+""".strip()
+    )
+    state = base_state(
+        tmp_path,
+        merge_sequence=[{"status": 9, "err": "merge blocked"}],
+    )
+
+    process, final_state = run_pid(
+        tmp_path,
+        ["--config", str(config_path), "feature/cool-stuff", "prompt"],
+        state=state,
+    )
+
+    assert process.returncode == 9
+    assert "github squash merge failed after 0 merge retries" in process.stderr
+    assert not calls(final_state, "git", "fetch")
+
+
+def test_configured_prompts_are_used_via_config_option(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        '''
+[prompts]
+review = "CUSTOM REVIEW target={review_target} request={original_prompt}"
+message = """
+CUSTOM MESSAGE request={original_prompt} branch={branch} base={base_rev}
+Output path: {output_path}
+"""
+ci_fix = "CUSTOM CI title={pr_title} url={pr_url} commit={commit_title} out={checks_out}"
+rebase_fix = "CUSTOM REBASE forge={forge_label} branch={default_branch} out={merge_out}"
+diagnostic_output_limit = 4
+'''.strip()
+    )
+    state = base_state(
+        tmp_path,
+        checks_sequence=[
+            {"status": 1, "out": "abcdefgh failed"},
+            {"status": 0, "out": "checks passed"},
+        ],
+    )
+
+    process, final_state = run_pid(
+        tmp_path,
+        ["--config", str(config_path), "feature/cool-stuff", "build", "thing"],
+        state=state,
+    )
+
+    assert_success(process)
+    review_call = next(
+        call for call in final_state["pi_calls"] if call["kind"] == "review"
+    )
+    message_call = next(
+        call for call in final_state["pi_calls"] if call["kind"] == "message"
+    )
+    ci_call = next(call for call in final_state["pi_calls"] if call["kind"] == "ci_fix")
+    assert review_call["prompt"].startswith("CUSTOM REVIEW target=Review")
+    assert "request=build thing" in review_call["prompt"]
+    assert message_call["prompt"].startswith("CUSTOM MESSAGE request=build thing")
+    assert "base=base123" in message_call["prompt"]
+    assert "out=abcd" in ci_call["prompt"]
+    assert "abcdefgh" not in ci_call["prompt"]
+
+
+def test_configured_rebase_prompt_is_used_via_config_option(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        """
+[prompts]
+rebase_fix = "CUSTOM REBASE forge={forge_label} branch={default_branch} out={merge_out}"
+diagnostic_output_limit = 7
+""".strip()
+    )
+    state = base_state(
+        tmp_path,
+        merge_sequence=[
+            {"status": 1, "err": "conflict detail"},
+            {"status": 0, "out": "merged"},
+        ],
+        rebase_conflict_once=True,
+        dirty_after_rebase_fix=" M resolved\n",
+    )
+
+    process, final_state = run_pid(
+        tmp_path,
+        ["--config", str(config_path), "feature/cool-stuff", "prompt"],
+        state=state,
+    )
+
+    assert_success(process)
+    rebase_call = next(
+        call for call in final_state["pi_calls"] if call["kind"] == "rebase_fix"
+    )
+    assert rebase_call["prompt"] == "CUSTOM REBASE forge=github branch=main out=conflic"
+
+
 def test_prompt_preserves_unknown_option_like_words(tmp_path: Path) -> None:
     state = base_state(tmp_path, worktree_dirty="", worktree_diff="")
 
@@ -954,7 +1154,7 @@ def test_rebase_still_in_progress_after_pi_stops(tmp_path: Path) -> None:
     assert "rebase still in progress after agent" in process.stderr
 
 
-def test_merge_failure_but_github_reports_merged_cleans_up(tmp_path: Path) -> None:
+def test_merge_failure_but_forge_reports_merged_cleans_up(tmp_path: Path) -> None:
     state = base_state(
         tmp_path,
         merge_sequence=[{"status": 1, "err": "cleanup failed"}],
@@ -966,7 +1166,9 @@ def test_merge_failure_but_github_reports_merged_cleans_up(tmp_path: Path) -> No
     )
 
     assert_success(process)
-    assert "GitHub reports PR merged despite local gh cleanup failure" in process.stdout
+    assert (
+        "github reports PR merged despite local forge cleanup failure" in process.stdout
+    )
     assert ["worktree", "remove", final_state["worktree_path"]] in [
         call["args"][-3:] for call in calls(final_state, "git")
     ]

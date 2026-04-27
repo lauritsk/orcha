@@ -1,7 +1,7 @@
 # pid
 
 pid is a small CLI that orchestrates an AI coding agent through a full
-GitHub pull request lifecycle.
+pull request or merge request lifecycle using a configurable forge CLI.
 
 It creates an isolated git worktree, runs a configured agent on your request,
 asks the agent to review the result, asks the agent to generate a Conventional
@@ -21,8 +21,10 @@ cleans up the worktree.
   including a check that relevant documentation was updated for code,
   behavior, workflow, configuration, and user-facing changes.
 - Generates the commit and PR title/body from the final reviewed work.
-- Verifies the generated commit title with `cog`.
-- Creates, updates, checks, retries, and squash-merges GitHub PRs with `gh`.
+- Verifies the generated commit title with a configurable verifier (`cog` by default).
+- Creates, updates, checks, retries, and squash-merges PRs with a configurable
+  forge CLI (`gh` by default; `glab`, `tea`, or custom wrappers can be used by
+  changing argument templates).
 - Handles CI failure follow-ups and moved-base rebase retries without charging
   agent attempts.
 - Uses Rich output for key status panels.
@@ -34,10 +36,12 @@ cleans up the worktree.
 - Git
 - A configured coding-agent CLI available on `PATH` (defaults to
   [`pi`](https://github.com/lauritsk/pi))
-- [`gh`](https://cli.github.com/) authenticated for the target repository
-- [`cog`](https://github.com/cocogitto/cocogitto) available on `PATH`
+- A configured forge CLI authenticated for the target repository (defaults to
+  [`gh`](https://cli.github.com/))
+- A configured commit-title verifier available on `PATH` (defaults to
+  [`cog`](https://github.com/cocogitto/cocogitto); can be disabled)
 - `mise` is optional at runtime; when present, pid runs `mise trust .` in
-  the new worktree
+  the new worktree unless `workflow.trust_mise = false`
 
 > [!IMPORTANT]
 > Run pid from a clean main worktree. pid stops if the main worktree has
@@ -101,10 +105,10 @@ pid session high feature/prototype-auth "explore auth UX options"
 7. Runs a configured review-thinking agent message pass that writes JSON
    metadata under the worktree git directory only.
 8. Refuses to continue if the message pass changes the worktree, omits the
-   JSON, writes invalid JSON, or produces an invalid Conventional Commit title.
+   JSON, writes invalid JSON, or fails the configured commit-title verifier.
 9. Squashes any agent-authored commits plus dirty changes into one commit with
    the generated title/body, opens or updates a PR with the same title/body,
-   then waits for GitHub checks.
+   then waits for configured forge checks.
 10. If checks fail, asks the agent to fix them, commits that feedback,
     regenerates the PR title/body from the updated diff, and retries. These
     agent rejection follow-ups consume `ATTEMPTS`.
@@ -130,8 +134,7 @@ Default config paths:
 Relative `XDG_CONFIG_HOME` values are ignored as required by the XDG Base
 Directory Specification.
 
-The agent command, launch behavior, and selected runtime behavior are
-configurable. Defaults are equivalent to:
+Most orchestration behavior is configurable. Key defaults are:
 
 ```toml
 [agent]
@@ -145,24 +148,115 @@ label = "agent"
 
 [runtime]
 keep_screen_awake = false
+
+[commit]
+verifier_command = ["cog"]
+verifier_args = ["verify", "{title}"]
+automated_feedback_title = "fix: address automated feedback"
+rebase_feedback_title = "fix: resolve latest base changes"
+
+[forge]
+command = ["gh"]
+label = "github"
+default_branch_args = [
+  "repo",
+  "view",
+  "--json",
+  "defaultBranchRef",
+  "--jq",
+  ".defaultBranchRef.name",
+]
+pr_view_args = ["pr", "view", "{branch}"]
+pr_create_args = ["pr", "create", "--title", "{title}", "--body", "{body}"]
+pr_edit_args = ["pr", "edit", "{branch}", "--title", "{title}", "--body", "{body}"]
+pr_url_args = ["pr", "view", "{branch}", "--json", "url", "--jq", ".url"]
+pr_head_oid_args = [
+  "pr",
+  "view",
+  "{branch}",
+  "--json",
+  "headRefOid",
+  "--jq",
+  ".headRefOid",
+]
+pr_checks_args = ["pr", "checks", "{branch}"]
+pr_merge_args = [
+  "pr",
+  "merge",
+  "{branch}",
+  "--squash",
+  "--match-head-commit",
+  "{head_oid}",
+  "--subject",
+  "{title}",
+  "--body",
+  "{body}",
+]
+pr_merged_at_args = [
+  "pr",
+  "view",
+  "{pr_url}",
+  "--json",
+  "mergedAt",
+  "--jq",
+  '.mergedAt // ""',
+]
+checks_pending_exit_codes = [8]
+no_checks_markers = ["no checks"]
+
+[prompts]
+diagnostic_output_limit = 20000
+# message, review, ci_fix, and rebase_fix are long built-in templates.
+# Override any one with a TOML string or multiline string.
+
+[workflow]
+checks_timeout_seconds = 1800
+checks_poll_interval_seconds = 10
+merge_retry_limit = 20
+trust_mise = true
 ```
 
-`command` may be an array of strings or a shell-style string.
-`non_interactive_args` must be an array of strings, must include `{prompt}`, and
-may include `{thinking}`. `interactive_args` may include `{prompt}` and
-`{thinking}`; when it does not include `{prompt}`, pid appends the optional
-session prompt as a trailing argument. Those are the only supported template
-fields. pid never assumes a specific agent CLI internally; it only expands
-these templates.
+`agent.command`, `forge.command`, and `commit.verifier_command` may be arrays of
+strings or shell-style strings. Argument templates must be arrays of strings.
 
 Set `runtime.keep_screen_awake = true` to keep the display awake while pid is
 running. This is currently implemented on macOS with the built-in `caffeinate`
 tool (`caffeinate -d -i`). Linux support is intentionally not enabled yet
 because pid does not assume a universal built-in Linux inhibitor.
 
-Example `pi` config:
+Agent templates support `{prompt}` and `{thinking}`. `agent.non_interactive_args`
+must include `{prompt}`. `agent.interactive_args` may include `{prompt}`; when it
+does not, pid appends the optional session prompt as a trailing argument.
+
+Forge templates support `{branch}`, `{title}`, `{body}`, `{pr_url}`, and
+`{head_oid}`. Defaults target `gh`, but pid only expands and runs the configured
+command; it does not require `gh` internally. Set `pr_checks_args = []` to skip
+check polling. Set `pr_merged_at_args = []` when the merge command should be
+trusted without a follow-up merged-state query. Set `pr_head_oid_args = []` only
+when `pr_merge_args` does not use `{head_oid}`. `no_checks_markers` values must
+not be blank strings.
+
+Commit verifier templates support `{title}`. Set `commit.verifier_args = []` to
+skip external title verification.
+
+Prompt templates must be non-blank and support these fields:
+
+| Prompt key | Fields |
+| --- | --- |
+| `prompts.message` | `{original_prompt}`, `{branch}`, `{base_rev}`, `{output_path}` |
+| `prompts.review` | `{original_prompt}`, `{review_target}` |
+| `prompts.ci_fix` | `{pr_title}`, `{pr_url}`, `{commit_title}`, `{checks_out}` |
+| `prompts.rebase_fix` | `{pr_title}`, `{pr_url}`, `{default_branch}`, `{commit_title}`, `{merge_out}`, `{forge_label}` |
+
+`prompts.message` must include `{output_path}` so the agent knows where to
+write the JSON commit/PR metadata. Use doubled braces (`{{` and `}}`) for
+literal braces inside prompt text. `diagnostic_output_limit` truncates
+`{checks_out}` and `{merge_out}` before they are inserted into prompts.
+
+Example agent configs:
 
 ```toml
+# pi
 [agent]
 command = ["pi"]
 non_interactive_args = ["--thinking", "{thinking}", "-p", "{prompt}"]
@@ -173,55 +267,73 @@ thinking_levels = ["low", "medium", "high", "xhigh"]
 label = "pi"
 ```
 
-Example OpenCode config:
-
 ```toml
+# OpenCode
 [agent]
 command = ["opencode"]
 non_interactive_args = ["run", "--prompt", "{prompt}"]
 interactive_args = []
-default_thinking = "medium"
-review_thinking = "high"
-thinking_levels = ["low", "medium", "high", "xhigh"]
 label = "opencode"
 ```
 
-Example Codex config:
-
 ```toml
+# Codex
 [agent]
 command = ["codex"]
 non_interactive_args = ["exec", "--model-reasoning-effort", "{thinking}", "{prompt}"]
 interactive_args = []
-default_thinking = "medium"
-review_thinking = "high"
 thinking_levels = ["low", "medium", "high"]
 label = "codex"
 ```
 
-Example Claude config:
-
 ```toml
+# Claude
 [agent]
 command = ["claude"]
 non_interactive_args = ["-p", "{prompt}"]
 interactive_args = []
-default_thinking = "medium"
-review_thinking = "high"
-thinking_levels = ["low", "medium", "high", "xhigh"]
 label = "claude"
 ```
 
-Agent CLI flags change over time; treat these as starting points and adjust the
-argument template for your installed agent version.
+Example forge config that switches the executable and label while keeping the
+default `gh`-style argument shape:
 
-pid reads these optional environment variables:
+```toml
+[forge]
+command = ["glab"]
+label = "gitlab"
+```
 
-| Variable | Default | Description |
+Real forge CLIs differ, so adjust every `forge.*_args` template for your
+installed version. For example, a CLI without head-OID guarded merges might use:
+
+```toml
+[forge]
+command = ["tea"]
+label = "tea"
+pr_head_oid_args = []
+pr_merge_args = [
+  "pulls",
+  "merge",
+  "{branch}",
+  "--squash",
+  "--title",
+  "{title}",
+  "--body",
+  "{body}",
+]
+pr_merged_at_args = []
+```
+
+Agent and forge CLI flags change over time; treat examples as starting points.
+
+Environment variables override the matching workflow config at runtime:
+
+| Variable | Config default | Description |
 | --- | --- | --- |
-| `PID_CHECKS_TIMEOUT_SECONDS` | `1800` | How long to wait for pending GitHub checks. |
-| `PID_CHECKS_POLL_INTERVAL_SECONDS` | `10` | Delay between check polling attempts. |
-| `PID_MERGE_RETRY_LIMIT` | `20` | Safety cap for moved-base merge/rebase retries that do not consume `ATTEMPTS`. |
+| `PID_CHECKS_TIMEOUT_SECONDS` | `workflow.checks_timeout_seconds` | How long to wait for pending checks. |
+| `PID_CHECKS_POLL_INTERVAL_SECONDS` | `workflow.checks_poll_interval_seconds` | Delay between check polling attempts. |
+| `PID_MERGE_RETRY_LIMIT` | `workflow.merge_retry_limit` | Safety cap for moved-base merge/rebase retries that do not consume `ATTEMPTS`. |
 
 ## Development
 
@@ -245,7 +357,7 @@ version and `mise run release:publish` to publish a tagged release.
 - `src/pid/cli.py` owns Typer command-line wiring.
 - `src/pid/workflow.py` coordinates the high-level pid lifecycle.
 - `src/pid/repository.py` wraps git, worktree, and commit operations.
-- `src/pid/github.py` wraps GitHub CLI pull request operations.
+- `src/pid/github.py` wraps configurable forge/PR CLI operations.
 - `src/pid/prompts.py` builds agent prompts and isolates untrusted output.
 - `src/pid/commands.py`, `output.py`, `parsing.py`, `utils.py`,
   `models.py`, and `errors.py` contain shared support code.

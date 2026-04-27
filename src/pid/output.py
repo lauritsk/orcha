@@ -84,11 +84,13 @@ def print_commit_message(message: CommitMessage) -> None:
     )
 
 
-def print_merge_success(pr_title: str, pr_url: str) -> None:
+def print_merge_success(
+    pr_title: str, pr_url: str, forge_label: str = "github"
+) -> None:
     """Print the successful merge summary panel."""
 
     if _CURRENT_LOGGER is not None:
-        _CURRENT_LOGGER.event(f"github squash merged: {pr_title} {pr_url}")
+        _CURRENT_LOGGER.event(f"{forge_label} squash merged: {pr_title} {pr_url}")
     table = Table.grid(padding=(0, 1))
     table.add_column(style="bold")
     table.add_column()
@@ -97,7 +99,7 @@ def print_merge_success(pr_title: str, pr_url: str) -> None:
     OUT_CONSOLE.print(
         Panel.fit(
             table,
-            title=Text("pid github squash merged", style="bold green"),
+            title=Text(f"pid {forge_label} squash merged", style="bold green"),
             border_style="green",
         )
     )

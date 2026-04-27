@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections.abc import Callable
 from pathlib import Path
 
 from pid.commands import CommandRunner
@@ -30,7 +31,9 @@ class Repository:
         output = self.output(["rev-list", "--count", f"{base_rev}..HEAD"], cwd=cwd)
         return int(output.strip() or "0")
 
-    def default_branch(self, main_worktree: str) -> str:
+    def default_branch(
+        self, main_worktree: str, fallback: Callable[[str], str] | None = None
+    ) -> str:
         """Resolve the repository default branch name."""
 
         symbolic_ref = self.runner.run(
@@ -46,19 +49,10 @@ class Repository:
         )
         if symbolic_ref.returncode == 0:
             default_branch = re.sub(r"^origin/", "", symbolic_ref.stdout.strip())
+        elif fallback is not None:
+            default_branch = fallback(main_worktree)
         else:
-            default_branch = self.runner.run(
-                [
-                    "gh",
-                    "repo",
-                    "view",
-                    "--json",
-                    "defaultBranchRef",
-                    "--jq",
-                    ".defaultBranchRef.name",
-                ],
-                cwd=main_worktree,
-            ).stdout.strip()
+            default_branch = ""
 
         if not default_branch:
             echo_err("pid: could not determine default branch")
@@ -226,7 +220,7 @@ class Repository:
             abort(1)
 
     def commit_dirty_automated_feedback(
-        self, worktree_path: str, commit_title: str
+        self, worktree_path: str, commit_title: str, feedback_title: str
     ) -> str:
         """Commit dirty automated feedback before a PR attempt."""
 
@@ -238,12 +232,14 @@ class Repository:
 
         self.runner.require(["git", "add", "-A"], cwd=worktree_path)
         self.runner.require(
-            ["git", "commit", "-m", "fix: address automated feedback"],
+            ["git", "commit", "-m", feedback_title],
             cwd=worktree_path,
         )
         return self.output(["log", "-1", "--format=%s"], cwd=worktree_path).strip()
 
-    def commit_rebase_changes(self, worktree_path: str, commit_title: str) -> str:
+    def commit_rebase_changes(
+        self, worktree_path: str, commit_title: str, rebase_title: str
+    ) -> str:
         """Commit dirty files left after a successful rebase resolution."""
 
         dirty = self.output(
@@ -254,7 +250,7 @@ class Repository:
 
         self.runner.require(["git", "add", "-A"], cwd=worktree_path)
         self.runner.require(
-            ["git", "commit", "-m", "fix: resolve latest base changes"],
+            ["git", "commit", "-m", rebase_title],
             cwd=worktree_path,
         )
         return self.output(["log", "-1", "--format=%s"], cwd=worktree_path).strip()

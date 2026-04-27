@@ -5,6 +5,7 @@ import pytest
 import pid.config as config_module
 from pid.config import default_config_path, load_config, parse_config
 from pid.errors import PIDAbort
+from pid.models import CommitMessage
 
 
 def test_default_config_path_uses_absolute_xdg_config_home(
@@ -113,6 +114,89 @@ def test_invalid_runtime_config_is_rejected(
     assert "runtime.keep_screen_awake must be a boolean" in capsys.readouterr().err
 
 
+def test_forge_command_and_args_are_configurable(tmp_path: Path) -> None:
+    config = parse_config(
+        {
+            "forge": {
+                "command": "glab --repo group/project",
+                "label": "gitlab",
+                "pr_checks_args": [],
+                "pr_head_oid_args": [],
+                "pr_merge_args": [
+                    "mr",
+                    "merge",
+                    "{branch}",
+                    "--squash",
+                    "--title",
+                    "{title}",
+                    "--description",
+                    "{body}",
+                ],
+                "pr_merged_at_args": [],
+                "checks_pending_exit_codes": [2, 3],
+                "no_checks_markers": ["no pipeline"],
+            }
+        },
+        tmp_path / "config.toml",
+    )
+
+    message = CommitMessage("feat: configurable forge", "- Adds forge config.")
+    assert config.forge.command == ("glab", "--repo", "group/project")
+    assert config.forge.command_line(
+        config.forge.pr_merge_args,
+        branch="feature/x",
+        title=message.title,
+        body=message.body,
+    ) == [
+        "glab",
+        "--repo",
+        "group/project",
+        "mr",
+        "merge",
+        "feature/x",
+        "--squash",
+        "--title",
+        "feat: configurable forge",
+        "--description",
+        "- Adds forge config.",
+    ]
+    assert config.forge.merge_uses_head_oid is False
+    assert config.forge.checks_pending_exit_codes == (2, 3)
+
+
+def test_prompts_workflow_and_commit_config_are_configurable(tmp_path: Path) -> None:
+    config = parse_config(
+        {
+            "commit": {
+                "verifier_args": [],
+                "automated_feedback_title": "fix: configured feedback",
+                "rebase_feedback_title": "fix: configured rebase",
+            },
+            "prompts": {
+                "review": "CUSTOM REVIEW {review_target} :: {original_prompt}",
+                "message": "CUSTOM MESSAGE {branch}\nOutput path: {output_path}",
+                "ci_fix": "CUSTOM CI {pr_title} {checks_out}",
+                "rebase_fix": "CUSTOM REBASE {forge_label} {merge_out}",
+                "diagnostic_output_limit": 12,
+            },
+            "workflow": {
+                "checks_timeout_seconds": 5,
+                "checks_poll_interval_seconds": 1,
+                "merge_retry_limit": 2,
+                "trust_mise": False,
+            },
+        },
+        tmp_path / "config.toml",
+    )
+
+    assert config.commit.verifier_enabled is False
+    assert config.commit.automated_feedback_title == "fix: configured feedback"
+    assert config.prompts.review.startswith("CUSTOM REVIEW")
+    assert config.prompts.diagnostic_output_limit == 12
+    assert config.workflow.checks_timeout_seconds == 5
+    assert config.workflow.trust_mise is False
+
+
 @pytest.mark.parametrize(
     ("agent_data", "message"),
     [
@@ -137,6 +221,45 @@ def test_invalid_agent_config_is_rejected(
 ) -> None:
     with pytest.raises(PIDAbort) as exc_info:
         parse_config({"agent": agent_data}, tmp_path / "config.toml")
+
+    assert exc_info.value.code == 2
+    assert message in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("data", "message"),
+    [
+        ({"prompts": {"review": "bad {cwd}"}}, "unsupported placeholder {cwd}"),
+        (
+            {
+                "forge": {
+                    "pr_merge_args": ["merge", "{head_oid}"],
+                    "pr_head_oid_args": [],
+                }
+            },
+            "pr_head_oid_args must not be empty",
+        ),
+        ({"workflow": {"trust_mise": "no"}}, "workflow.trust_mise must be a boolean"),
+        ({"prompts": {"message": "write metadata"}}, "must include {output_path}"),
+        ({"prompts": {"ci_fix": "   "}}, "prompts.ci_fix must not be blank"),
+        (
+            {"forge": {"no_checks_markers": [" "]}},
+            "forge.no_checks_markers must not contain blank strings",
+        ),
+        (
+            {"commit": {"verifier_args": ["--bad", "{body}"]}},
+            "unsupported placeholder {body}",
+        ),
+    ],
+)
+def test_invalid_non_agent_config_is_rejected(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    data: dict[str, object],
+    message: str,
+) -> None:
+    with pytest.raises(PIDAbort) as exc_info:
+        parse_config(data, tmp_path / "config.toml")
 
     assert exc_info.value.code == 2
     assert message in capsys.readouterr().err

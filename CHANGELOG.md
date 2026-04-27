@@ -2,6 +2,20 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## [v0.4.0](https://github.com/lauritsk/pid/compare/c0030032a7fcf3c6a38aef18607ab1b03d1b0af0..v0.4.0) - 2026-04-27
+#### Features
+- make pid prompts and forge commands configurable - ([6fe865b](https://github.com/lauritsk/pid/commit/6fe865b75a82a1d36812f6215ed73bd2e5cfc410)) - Karl Hans Laurits
+- keep screen awake on macOS when configured - ([0e8c96c](https://github.com/lauritsk/pid/commit/0e8c96c5c9a803ddd9a34d9a59eb990c3bfda8db)) - Karl Hans Laurits
+#### Tests
+- expand edge-case coverage and enforce coverage gate - ([afc7da7](https://github.com/lauritsk/pid/commit/afc7da75b5342fcb3de5d080fad812be10246235)) - Karl Hans Laurits
+#### Miscellaneous Chores
+- update mise packages - ([b7391d2](https://github.com/lauritsk/pid/commit/b7391d2fe5cd6df609038ed2c82bdc45acf5329e)) - Karl Hans Laurits
+- update todo - ([6b1d497](https://github.com/lauritsk/pid/commit/6b1d497c5fa03c6b6c2eb2e3925d2f4c882dee8e)) - Karl Hans Laurits
+- add released version of pid as usable package to mise - ([28c6c7b](https://github.com/lauritsk/pid/commit/28c6c7b9922212e2bbf40efaef1dc3c3abc375f7)) - Karl Hans Laurits
+- rename project to pid - ([c003003](https://github.com/lauritsk/pid/commit/c0030032a7fcf3c6a38aef18607ab1b03d1b0af0)) - Karl Hans Laurits
+
+- - -
+
 ## [v0.3.0](https://github.com/lauritsk/pid/compare/9bf6b6ed1e2eb7999d898b6c9452ad7cc8e58628..v0.3.0) - 2026-04-27
 #### Features
 - use any agent - ([9c00a68](https://github.com/lauritsk/pid/commit/9c00a68d1cda7ddcb96a321d704b65009f52f15b)) - Karl Hans Laurits

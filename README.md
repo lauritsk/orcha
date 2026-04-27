@@ -56,7 +56,7 @@ uv tool install .
 ```
 
 For development, use `mise` from the repository root. `mise run test` runs
-pytest with the repository coverage gate:
+pytest in parallel with the repository coverage gate:
 
 ```sh
 mise trust
@@ -417,8 +417,8 @@ Environment variables override the matching paths or workflow config at runtime:
 
 ## Development
 
-This repository uses `mise` for tools and tasks. The test task runs pytest with
-coverage reporting and fails below 95% total coverage.
+This repository uses `mise` for tools and tasks. The test task runs pytest in
+parallel with coverage reporting and fails below 95% total coverage.
 
 ```sh
 mise trust

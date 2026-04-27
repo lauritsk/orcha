@@ -1,11 +1,31 @@
 """Command line interface for Orcha."""
 
+from __future__ import annotations
+
+from typing import Annotated
+
 import typer
 
-app = typer.Typer(help="Agent orchestration tool.")
+from orcha.workflow import run_orcha
+
+APP_CONTEXT = {
+    "allow_extra_args": True,
+    "help_option_names": ["-h", "--help"],
+    "ignore_unknown_options": True,
+}
+
+app = typer.Typer(add_completion=False, context_settings=APP_CONTEXT)
 
 
-@app.command()
-def main() -> None:
+@app.command(context_settings=APP_CONTEXT)
+def main(
+    args: Annotated[
+        list[str] | None,
+        typer.Argument(
+            help="Attempts, thinking level, branch name, then prompt words.",
+            metavar="[ATTEMPTS] [THINKING] BRANCH PROMPT...",
+        ),
+    ] = None,
+) -> None:
     """Run Orcha."""
-    typer.echo("Hello from orcha!")
+    raise typer.Exit(run_orcha(args or []))

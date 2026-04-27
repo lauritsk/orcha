@@ -2,7 +2,6 @@
 HK_MISE = 1
 
 [tools]
-"aqua:fish-shell/fish-shell" = "4.6.0"
 cocogitto = "7.0.0"
 cosign = "3.0.6"
 goreleaser = "2.15.4"
@@ -44,7 +43,7 @@ run = "uv audit --preview-features audit --locked"
 
 [tasks.check]
 description = "Run project checks"
-depends = ["lint", "test", "build"]
+depends = ["lint", "test", "build", "audit"]
 
 [tasks.version]
 run = "cog bump --auto"

@@ -5,15 +5,17 @@ from orcha.cli import app
 runner = CliRunner()
 
 
-def test_app_prints_greeting():
+def test_app_prints_short_usage_by_default() -> None:
     result = runner.invoke(app)
 
     assert result.exit_code == 0
-    assert result.output == "Hello from orcha!\n"
+    assert result.output == "usage: orcha [ATTEMPTS] [THINKING] BRANCH PROMPT...\n"
 
 
-def test_app_shows_help():
+def test_app_shows_typer_help() -> None:
     result = runner.invoke(app, ["--help"])
 
     assert result.exit_code == 0
     assert "Run Orcha." in result.output
+    assert "[ATTEMPTS] [THINKING] BRANCH" in result.output
+    assert "Show this message and exit" in result.output

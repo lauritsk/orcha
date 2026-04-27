@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -11,18 +10,16 @@ from typing import Any
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-WT_FISH = ROOT / "wt.fish"
-FISH = shutil.which("fish")
+SRC = ROOT / "src"
 
 FAKE_COMMAND = r"""
-import hashlib
 import json
 import os
 import shutil
 import sys
 from pathlib import Path
 
-state_path = Path(os.environ["WT_FAKE_STATE"])
+state_path = Path(os.environ["ORCHA_FAKE_STATE"])
 
 
 def load_state():
@@ -61,7 +58,7 @@ def real_args(args):
 
 
 def is_main(state, cwd):
-    return os.path.realpath(cwd) == os.path.realpath(state["main_wt"])
+    return os.path.realpath(cwd) == os.path.realpath(state["main_worktree"])
 
 
 def is_worktree(state, cwd):
@@ -383,29 +380,6 @@ def cmd_mise(state, args):
     finish(state, 97, err="unhandled mise: " + " ".join(args))
 
 
-def cmd_shasum(state, args):
-    if "--" in args:
-        path = args[args.index("--") + 1]
-        data = Path(path).read_bytes() if Path(path).exists() else b""
-        digest = hashlib.sha256(data).hexdigest()
-        finish(state, 0, f"{digest}  {path}")
-    data = sys.stdin.buffer.read()
-    digest = hashlib.sha256(data).hexdigest()
-    finish(state, 0, f"{digest}  -")
-
-
-def cmd_date(state, args):
-    if args == ["+%s"]:
-        now = int(state.get("date_now", 1000))
-        state["date_now"] = now + int(state.get("date_step", 1))
-        finish(state, 0, str(now))
-    finish(state, 97, err="unhandled date: " + " ".join(args))
-
-
-def cmd_sleep(state, args):
-    finish(state)
-
-
 def main():
     state = load_state()
     cmd = Path(sys.argv[0]).name
@@ -418,9 +392,6 @@ def main():
         "gh": cmd_gh,
         "pi": cmd_pi,
         "mise": cmd_mise,
-        "shasum": cmd_shasum,
-        "date": cmd_date,
-        "sleep": cmd_sleep,
     }
     if cmd not in dispatch:
         finish(state, 127, err=f"unknown fake command: {cmd}")
@@ -439,7 +410,7 @@ def base_state(
     (repo / ".git").mkdir()
     state: dict[str, Any] = {
         "repo_root": str(repo),
-        "main_wt": str(repo),
+        "main_worktree": str(repo),
         "common_git_dir": str(repo / ".git"),
         "base_rev": "base123",
         "head": "base123",
@@ -453,8 +424,6 @@ def base_state(
         "cached_diff": "",
         "main_dirty": "",
         "pr_url": "https://example.invalid/pr/1",
-        "date_now": 1000,
-        "date_step": 1,
     }
     state.update(overrides)
     return state
@@ -468,7 +437,7 @@ def install_fake_commands(bin_dir: Path, commands: tuple[str, ...]) -> None:
         os.symlink(script, bin_dir / command)
 
 
-def run_wt(
+def run_orcha(
     tmp_path: Path,
     args: list[str],
     *,
@@ -479,14 +448,8 @@ def run_wt(
         "pi",
         "gh",
         "mise",
-        "shasum",
-        "date",
-        "sleep",
     ),
 ) -> tuple[subprocess.CompletedProcess[str], dict[str, Any]]:
-    if FISH is None:
-        pytest.fail("fish shell is required to exercise wt.fish")
-
     state = state or base_state(tmp_path)
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -498,21 +461,20 @@ def run_wt(
     env.update(
         {
             "PATH": f"{bin_dir}:/usr/bin:/bin",
-            "WT_FAKE_STATE": str(state_path),
+            "ORCHA_FAKE_STATE": str(state_path),
             "TERM": "dumb",
             "NO_COLOR": "1",
+            "PYTHONPATH": str(SRC),
+            "ORCHA_CHECKS_TIMEOUT_SECONDS": str(
+                state.get("checks_timeout_seconds", 1800)
+            ),
+            "ORCHA_CHECKS_POLL_INTERVAL_SECONDS": str(
+                state.get("checks_poll_interval_seconds", 0)
+            ),
         }
     )
     process = subprocess.run(
-        [
-            FISH,
-            "--private",
-            "--no-config",
-            "-c",
-            f"source {WT_FISH}; wt $argv",
-            "--",
-            *args,
-        ],
+        [sys.executable, "-m", "orcha", *args],
         cwd=state["repo_root"],
         env=env,
         text=True,
@@ -538,12 +500,20 @@ def assert_success(process: subprocess.CompletedProcess[str]) -> None:
     assert process.returncode == 0, combined_output(process)
 
 
-@pytest.mark.parametrize("args", [[], ["--help"], ["-h"]])
-def test_usage_forms_exit_zero(tmp_path: Path, args: list[str]) -> None:
-    process, _ = run_wt(tmp_path, args, commands=())
+def test_no_args_prints_short_usage(tmp_path: Path) -> None:
+    process, _ = run_orcha(tmp_path, [], commands=())
 
     assert_success(process)
-    assert process.stdout == "usage: wt [ATTEMPTS] [THINKING] BRANCH PROMPT...\n"
+    assert process.stdout == "usage: orcha [ATTEMPTS] [THINKING] BRANCH PROMPT...\n"
+
+
+@pytest.mark.parametrize("args", [["--help"], ["-h"]])
+def test_help_uses_typer_output(tmp_path: Path, args: list[str]) -> None:
+    process, _ = run_orcha(tmp_path, args, commands=())
+
+    assert_success(process)
+    assert "Run Orcha." in process.stdout
+    assert "[ATTEMPTS] [THINKING] BRANCH" in process.stdout
 
 
 @pytest.mark.parametrize(
@@ -559,22 +529,22 @@ def test_usage_forms_exit_zero(tmp_path: Path, args: list[str]) -> None:
 def test_argument_validation_errors(
     tmp_path: Path, args: list[str], message: str
 ) -> None:
-    process, _ = run_wt(tmp_path, args, commands=())
+    process, _ = run_orcha(tmp_path, args, commands=())
 
     assert process.returncode == 2
     assert message in process.stderr
-    assert "usage: wt [ATTEMPTS] [THINKING] BRANCH PROMPT..." in process.stderr
+    assert "usage: orcha [ATTEMPTS] [THINKING] BRANCH PROMPT..." in process.stderr
 
 
 def test_invalid_branch_name_stops_before_repo_setup(tmp_path: Path) -> None:
     state = base_state(tmp_path, branch="bad branch", invalid_branches=["bad branch"])
 
-    process, final_state = run_wt(
+    process, final_state = run_orcha(
         tmp_path, ["bad branch", "prompt"], state=state, commands=("git",)
     )
 
     assert process.returncode == 1
-    assert "wt: invalid branch name: bad branch" in process.stderr
+    assert "orcha: invalid branch name: bad branch" in process.stderr
     assert calls(final_state, "git", "check-ref-format")
     assert not calls(final_state, "git", "rev-parse", "--show-toplevel")
 
@@ -593,7 +563,7 @@ def test_commit_title_is_derived_from_branch(
 ) -> None:
     state = base_state(tmp_path, branch=branch)
 
-    process, final_state = run_wt(
+    process, final_state = run_orcha(
         tmp_path,
         [branch, "prompt"],
         state=state,
@@ -631,7 +601,7 @@ def test_preflight_dependency_failures(
 ) -> None:
     state = base_state(tmp_path, **overrides)
 
-    process, _ = run_wt(
+    process, _ = run_orcha(
         tmp_path, ["feature/cool-stuff", "prompt"], state=state, commands=commands
     )
 
@@ -678,7 +648,7 @@ def test_default_branch_resolution(
 ) -> None:
     state = base_state(tmp_path, branch_exists=True, **overrides)
 
-    process, final_state = run_wt(
+    process, final_state = run_orcha(
         tmp_path, ["feature/cool-stuff", "prompt"], state=state
     )
 
@@ -702,7 +672,7 @@ def test_default_branch_switch_or_pull_failures_return_error(
 ) -> None:
     state = base_state(tmp_path, **overrides)
 
-    process, _ = run_wt(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
+    process, _ = run_orcha(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
 
     assert process.returncode == 1
     assert message in process.stderr
@@ -725,7 +695,7 @@ def test_worktree_precreation_guards(
 ) -> None:
     state = base_state(tmp_path, **overrides)
 
-    process, _ = run_wt(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
+    process, _ = run_orcha(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
 
     assert process.returncode == 1
     assert message in process.stderr
@@ -735,7 +705,7 @@ def test_existing_worktree_path_is_rejected(tmp_path: Path) -> None:
     state = base_state(tmp_path)
     Path(state["repo_root"]).with_name("orcha-feature-cool-stuff").mkdir()
 
-    process, _ = run_wt(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
+    process, _ = run_orcha(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
 
     assert process.returncode == 1
     assert "path already exists" in process.stderr
@@ -753,7 +723,7 @@ def test_worktree_setup_failures_return_error(
 ) -> None:
     state = base_state(tmp_path, **overrides)
 
-    process, _ = run_wt(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
+    process, _ = run_orcha(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
 
     assert process.returncode == 1
     assert message in process.stderr
@@ -762,7 +732,7 @@ def test_worktree_setup_failures_return_error(
 def test_worktree_config_failure_cleans_up(tmp_path: Path) -> None:
     state = base_state(tmp_path, worktree_config_fail=True)
 
-    process, final_state = run_wt(
+    process, final_state = run_orcha(
         tmp_path, ["feature/cool-stuff", "prompt"], state=state
     )
 
@@ -779,7 +749,7 @@ def test_worktree_config_failure_cleans_up(tmp_path: Path) -> None:
 def test_mise_trust_failure_stops_after_worktree_creation(tmp_path: Path) -> None:
     state = base_state(tmp_path, mise_trust_fail=True)
 
-    process, final_state = run_wt(
+    process, final_state = run_orcha(
         tmp_path, ["feature/cool-stuff", "prompt"], state=state
     )
 
@@ -792,11 +762,11 @@ def test_mise_trust_failure_stops_after_worktree_creation(tmp_path: Path) -> Non
 def test_mise_is_optional_when_not_on_path(tmp_path: Path) -> None:
     state = base_state(tmp_path, worktree_dirty="", worktree_diff="")
 
-    process, final_state = run_wt(
+    process, final_state = run_orcha(
         tmp_path,
         ["feature/cool-stuff", "prompt"],
         state=state,
-        commands=("git", "cog", "pi", "gh", "shasum", "date", "sleep"),
+        commands=("git", "cog", "pi", "gh"),
     )
 
     assert_success(process)
@@ -807,7 +777,7 @@ def test_mise_is_optional_when_not_on_path(tmp_path: Path) -> None:
 def test_initial_pi_failure_stops_before_review(tmp_path: Path) -> None:
     state = base_state(tmp_path, pi_fail_kinds=["initial"], pi_fail_status=13)
 
-    process, final_state = run_wt(
+    process, final_state = run_orcha(
         tmp_path, ["low", "feature/cool-stuff", "do work"], state=state
     )
 
@@ -844,7 +814,7 @@ def test_review_prompt_targets_commits_dirty_or_empty_work(
         **overrides,
     )
 
-    process, final_state = run_wt(
+    process, final_state = run_orcha(
         tmp_path, ["feature/cool-stuff", "original request"], state=state
     )
 
@@ -859,7 +829,7 @@ def test_review_prompt_targets_commits_dirty_or_empty_work(
 def test_no_changes_after_review_stops_before_pr(tmp_path: Path) -> None:
     state = base_state(tmp_path, worktree_dirty="", worktree_diff="")
 
-    process, final_state = run_wt(
+    process, final_state = run_orcha(
         tmp_path, ["feature/cool-stuff", "prompt"], state=state
     )
 
@@ -871,7 +841,7 @@ def test_no_changes_after_review_stops_before_pr(tmp_path: Path) -> None:
 def test_dirty_work_is_committed_then_pr_created_and_merged(tmp_path: Path) -> None:
     state = base_state(tmp_path)
 
-    process, final_state = run_wt(
+    process, final_state = run_orcha(
         tmp_path,
         ["2", "high", "feature/cool-stuff", "build", "thing"],
         state=state,
@@ -879,7 +849,7 @@ def test_dirty_work_is_committed_then_pr_created_and_merged(tmp_path: Path) -> N
 
     assert_success(process)
     assert "Created" in process.stdout
-    assert "wt: PR attempt 1/2" in process.stdout
+    assert "orcha: PR attempt 1/2" in process.stdout
     assert "github squash merged" in process.stdout
     assert final_state["commit_messages"] == ["feat: cool stuff"]
     assert final_state["pi_calls"][0]["thinking"] == "high"
@@ -900,7 +870,7 @@ def test_existing_commits_with_dirty_review_changes_commit_followup(
 ) -> None:
     state = base_state(tmp_path, commit_count=1, last_commit_title="feat: existing")
 
-    process, final_state = run_wt(
+    process, final_state = run_orcha(
         tmp_path, ["feature/cool-stuff", "prompt"], state=state
     )
 
@@ -911,7 +881,7 @@ def test_existing_commits_with_dirty_review_changes_commit_followup(
 def test_dirty_after_commit_stops_before_pr(tmp_path: Path) -> None:
     state = base_state(tmp_path, dirty_after_commit=True)
 
-    process, _ = run_wt(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
+    process, _ = run_orcha(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
 
     assert process.returncode == 1
     assert "worktree still has uncommitted changes after commit" in process.stderr
@@ -920,7 +890,7 @@ def test_dirty_after_commit_stops_before_pr(tmp_path: Path) -> None:
 def test_commit_failure_returns_before_pr(tmp_path: Path) -> None:
     state = base_state(tmp_path, commit_fail=True)
 
-    process, _ = run_wt(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
+    process, _ = run_orcha(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
 
     assert process.returncode == 1
     assert "commit failed" in process.stderr
@@ -929,7 +899,7 @@ def test_commit_failure_returns_before_pr(tmp_path: Path) -> None:
 def test_dirty_at_pr_attempt_gets_automated_feedback_commit(tmp_path: Path) -> None:
     state = base_state(tmp_path, dirty_after_log_once=" M generated\n")
 
-    process, final_state = run_wt(
+    process, final_state = run_orcha(
         tmp_path, ["feature/cool-stuff", "prompt"], state=state
     )
 
@@ -946,12 +916,12 @@ def test_existing_pr_no_checks_and_queued_merge(tmp_path: Path) -> None:
         merged_at_after_success="",
     )
 
-    process, final_state = run_wt(
+    process, final_state = run_orcha(
         tmp_path, ["feature/cool-stuff", "prompt"], state=state
     )
 
     assert_success(process)
-    assert "wt: no CI checks reported; continuing" in process.stdout
+    assert "orcha: no CI checks reported; continuing" in process.stdout
     assert "likely queued or auto-merge enabled" in process.stdout
     assert calls(final_state, "gh", "pr", "edit")
     assert not calls(final_state, "gh", "pr", "create")
@@ -970,7 +940,7 @@ def test_pr_setup_failures_return_error(
 ) -> None:
     state = base_state(tmp_path, **overrides)
 
-    process, _ = run_wt(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
+    process, _ = run_orcha(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
 
     assert process.returncode == 1
     assert message in process.stderr
@@ -988,7 +958,7 @@ def test_ci_failure_invokes_followup_pi_and_retries_with_bumped_thinking(
         ],
     )
 
-    process, final_state = run_wt(
+    process, final_state = run_orcha(
         tmp_path, ["feature/cool-stuff", "prompt"], state=state
     )
 
@@ -1004,13 +974,13 @@ def test_ci_failure_invokes_followup_pi_and_retries_with_bumped_thinking(
         "review changed first pass; follow-up pi thinking bumped to high"
         in process.stdout
     )
-    assert "wt: PR attempt 2/3" in process.stdout
+    assert "orcha: PR attempt 2/3" in process.stdout
 
 
 def test_ci_failure_on_last_attempt_leaves_pr_open(tmp_path: Path) -> None:
     state = base_state(tmp_path, checks_sequence=[{"status": 1, "out": "failed"}])
 
-    process, _ = run_wt(tmp_path, ["1", "feature/cool-stuff", "prompt"], state=state)
+    process, _ = run_orcha(tmp_path, ["1", "feature/cool-stuff", "prompt"], state=state)
 
     assert process.returncode == 1
     assert "CI checks failed after 1 attempts" in process.stderr
@@ -1024,7 +994,7 @@ def test_ci_followup_pi_failure_returns_pi_status(tmp_path: Path) -> None:
         pi_fail_status=19,
     )
 
-    process, _ = run_wt(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
+    process, _ = run_orcha(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
 
     assert process.returncode == 19
     assert "pi exited with status 19 while fixing CI" in process.stderr
@@ -1034,13 +1004,13 @@ def test_pending_checks_time_out_and_fail_on_last_attempt(tmp_path: Path) -> Non
     state = base_state(
         tmp_path,
         checks_sequence=[{"status": 8, "out": "still pending"}],
-        date_step=2000,
+        checks_timeout_seconds=0,
     )
 
-    process, _ = run_wt(tmp_path, ["1", "feature/cool-stuff", "prompt"], state=state)
+    process, _ = run_orcha(tmp_path, ["1", "feature/cool-stuff", "prompt"], state=state)
 
     assert process.returncode == 8
-    assert "CI checks still pending after 1800 seconds" in process.stderr
+    assert "CI checks still pending after 0 seconds" in process.stderr
     assert "CI checks failed after 1 attempts" in process.stderr
 
 
@@ -1054,7 +1024,7 @@ def test_merge_failure_rebases_force_pushes_and_retries(tmp_path: Path) -> None:
         dirty_after_rebase_success=" M rebased\n",
     )
 
-    process, final_state = run_wt(
+    process, final_state = run_orcha(
         tmp_path, ["feature/cool-stuff", "prompt"], state=state
     )
 
@@ -1075,7 +1045,7 @@ def test_fetch_failure_after_merge_failure_returns_error(tmp_path: Path) -> None
         fetch_fail=True,
     )
 
-    process, _ = run_wt(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
+    process, _ = run_orcha(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
 
     assert process.returncode == 1
     assert "fetch failed" in process.stderr
@@ -1092,7 +1062,7 @@ def test_rebase_conflict_invokes_pi_resolution(tmp_path: Path) -> None:
         dirty_after_rebase_fix=" M resolved\n",
     )
 
-    process, final_state = run_wt(
+    process, final_state = run_orcha(
         tmp_path, ["feature/cool-stuff", "prompt"], state=state
     )
 
@@ -1116,7 +1086,7 @@ def test_rebase_still_in_progress_after_pi_stops(tmp_path: Path) -> None:
         rebase_still_in_progress=True,
     )
 
-    process, _ = run_wt(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
+    process, _ = run_orcha(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
 
     assert process.returncode == 1
     assert "rebase still in progress after pi" in process.stderr
@@ -1129,7 +1099,7 @@ def test_merge_failure_but_github_reports_merged_cleans_up(tmp_path: Path) -> No
         merged_after_failed_merge=True,
     )
 
-    process, final_state = run_wt(
+    process, final_state = run_orcha(
         tmp_path, ["feature/cool-stuff", "prompt"], state=state
     )
 
@@ -1143,7 +1113,7 @@ def test_merge_failure_but_github_reports_merged_cleans_up(tmp_path: Path) -> No
 def test_merge_confirmation_failure_returns_error(tmp_path: Path) -> None:
     state = base_state(tmp_path, merged_at_query_fail=True)
 
-    process, _ = run_wt(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
+    process, _ = run_orcha(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
 
     assert process.returncode == 1
     assert "merged state could not be confirmed" in process.stderr
@@ -1152,7 +1122,7 @@ def test_merge_confirmation_failure_returns_error(tmp_path: Path) -> None:
 def test_merge_success_without_merged_at_leaves_pr_for_queue(tmp_path: Path) -> None:
     state = base_state(tmp_path, merged_at_after_success="")
 
-    process, _ = run_wt(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
+    process, _ = run_orcha(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
 
     assert_success(process)
     assert "likely queued or auto-merge enabled" in process.stdout
@@ -1161,7 +1131,7 @@ def test_merge_success_without_merged_at_leaves_pr_for_queue(tmp_path: Path) -> 
 def test_merge_failure_after_last_attempt_leaves_pr_open(tmp_path: Path) -> None:
     state = base_state(tmp_path, merge_sequence=[{"status": 9, "err": "merge blocked"}])
 
-    process, _ = run_wt(tmp_path, ["1", "feature/cool-stuff", "prompt"], state=state)
+    process, _ = run_orcha(tmp_path, ["1", "feature/cool-stuff", "prompt"], state=state)
 
     assert process.returncode == 9
     assert "github squash merge failed after 1 attempts" in process.stderr
@@ -1170,7 +1140,7 @@ def test_merge_failure_after_last_attempt_leaves_pr_open(tmp_path: Path) -> None
 def test_cleanup_worktree_remove_failure_is_reported(tmp_path: Path) -> None:
     state = base_state(tmp_path, worktree_remove_fail=True)
 
-    process, _ = run_wt(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
+    process, _ = run_orcha(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
 
     assert process.returncode == 1
     assert "worktree remove failed" in process.stderr
@@ -1188,7 +1158,7 @@ def test_rebase_pi_failure_returns_pi_status(tmp_path: Path) -> None:
         pi_fail_status=23,
     )
 
-    process, _ = run_wt(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
+    process, _ = run_orcha(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
 
     assert process.returncode == 23
     assert "pi exited with status 23 while resolving rebase" in process.stderr

@@ -502,7 +502,7 @@ def test_pr_setup_failures_return_error(
     assert message in process.stderr
 
 
-def test_ci_failure_invokes_followup_pi_and_retries_with_bumped_thinking(
+def test_first_ci_followup_keeps_thinking_after_review_changes(
     tmp_path: Path,
 ) -> None:
     state = base_state(
@@ -523,14 +523,39 @@ def test_ci_failure_invokes_followup_pi_and_retries_with_bumped_thinking(
         call for call in final_state["pi_calls"] if call["kind"] == "ci_fix"
     ]
     assert len(ci_fix_calls) == 1
-    assert ci_fix_calls[0]["thinking"] == "high"
+    assert ci_fix_calls[0]["thinking"] == "medium"
     assert "unit tests failed" in ci_fix_calls[0]["prompt"]
     assert "fix: address automated feedback" in final_state["commit_messages"]
     assert (
-        "review changed first pass; follow-up pi thinking bumped to high"
+        "review changed first pass; follow-up pi will keep thinking medium"
         in process.stdout
     )
+    assert "next pi thinking bumped to high" in process.stdout
     assert "orcha: PR attempt 2/3" in process.stdout
+
+
+def test_second_ci_followup_uses_bumped_thinking_after_review_changes(
+    tmp_path: Path,
+) -> None:
+    state = base_state(
+        tmp_path,
+        review_changes=True,
+        checks_sequence=[
+            {"status": 1, "out": "unit tests failed"},
+            {"status": 1, "out": "lint failed"},
+            {"status": 0, "out": "checks passed"},
+        ],
+    )
+
+    process, final_state = run_orcha(
+        tmp_path, ["feature/cool-stuff", "prompt"], state=state
+    )
+
+    assert_success(process)
+    ci_fix_calls = [
+        call for call in final_state["pi_calls"] if call["kind"] == "ci_fix"
+    ]
+    assert [call["thinking"] for call in ci_fix_calls] == ["medium", "high"]
 
 
 def test_ci_fix_regenerates_pr_and_squash_message(tmp_path: Path) -> None:
@@ -663,8 +688,35 @@ def test_rebase_conflict_invokes_pi_resolution(tmp_path: Path) -> None:
         call for call in final_state["pi_calls"] if call["kind"] == "rebase_fix"
     ]
     assert len(rebase_calls) == 1
+    assert rebase_calls[0]["thinking"] == "medium"
     assert "rebase onto origin/main is now in progress" in rebase_calls[0]["prompt"]
     assert "fix: resolve latest base changes" in final_state["commit_messages"]
+
+
+def test_rebase_conflict_after_review_changes_does_not_bump_thinking(
+    tmp_path: Path,
+) -> None:
+    state = base_state(
+        tmp_path,
+        review_changes=True,
+        merge_sequence=[
+            {"status": 1, "err": "conflict"},
+            {"status": 0, "out": "merged"},
+        ],
+        rebase_conflict_once=True,
+        dirty_after_rebase_fix=" M resolved\n",
+    )
+
+    process, final_state = run_orcha(
+        tmp_path, ["low", "feature/cool-stuff", "prompt"], state=state
+    )
+
+    assert_success(process)
+    rebase_calls = [
+        call for call in final_state["pi_calls"] if call["kind"] == "rebase_fix"
+    ]
+    assert [call["thinking"] for call in rebase_calls] == ["low"]
+    assert "next pi thinking bumped" not in process.stdout
 
 
 def test_rebase_still_in_progress_after_pi_stops(tmp_path: Path) -> None:

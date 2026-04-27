@@ -111,44 +111,44 @@ url = "https://github.com/sigstore/cosign/releases/download/v3.0.6/cosign-window
 provenance = "cosign"
 
 [[tools."github:lauritsk/pid"]]
-version = "0.5.0"
+version = "0.5.1"
 backend = "github:lauritsk/pid"
 
 [tools."github:lauritsk/pid"."platforms.linux-arm64"]
-checksum = "sha256:d3a738ad4d331233be5431bc8f69688ce284cc0c0cb6c11c4117f48ef1b84a8a"
-url = "https://github.com/lauritsk/pid/releases/download/v0.5.0/pid-0.5.0.tar.gz"
-url_api = "https://api.github.com/repos/lauritsk/pid/releases/assets/406898425"
+checksum = "sha256:c1bcef79f22168cb969eea7fa9a53a9bb007166ed9cd58d7c7bef8ed12db104e"
+url = "https://github.com/lauritsk/pid/releases/download/v0.5.1/pid-0.5.1.tar.gz"
+url_api = "https://api.github.com/repos/lauritsk/pid/releases/assets/406911203"
 
 [tools."github:lauritsk/pid"."platforms.linux-arm64-musl"]
-checksum = "sha256:d3a738ad4d331233be5431bc8f69688ce284cc0c0cb6c11c4117f48ef1b84a8a"
-url = "https://github.com/lauritsk/pid/releases/download/v0.5.0/pid-0.5.0.tar.gz"
-url_api = "https://api.github.com/repos/lauritsk/pid/releases/assets/406898425"
+checksum = "sha256:c1bcef79f22168cb969eea7fa9a53a9bb007166ed9cd58d7c7bef8ed12db104e"
+url = "https://github.com/lauritsk/pid/releases/download/v0.5.1/pid-0.5.1.tar.gz"
+url_api = "https://api.github.com/repos/lauritsk/pid/releases/assets/406911203"
 
 [tools."github:lauritsk/pid"."platforms.linux-x64"]
-checksum = "sha256:d3a738ad4d331233be5431bc8f69688ce284cc0c0cb6c11c4117f48ef1b84a8a"
-url = "https://github.com/lauritsk/pid/releases/download/v0.5.0/pid-0.5.0.tar.gz"
-url_api = "https://api.github.com/repos/lauritsk/pid/releases/assets/406898425"
+checksum = "sha256:c1bcef79f22168cb969eea7fa9a53a9bb007166ed9cd58d7c7bef8ed12db104e"
+url = "https://github.com/lauritsk/pid/releases/download/v0.5.1/pid-0.5.1.tar.gz"
+url_api = "https://api.github.com/repos/lauritsk/pid/releases/assets/406911203"
 
 [tools."github:lauritsk/pid"."platforms.linux-x64-musl"]
-checksum = "sha256:d3a738ad4d331233be5431bc8f69688ce284cc0c0cb6c11c4117f48ef1b84a8a"
-url = "https://github.com/lauritsk/pid/releases/download/v0.5.0/pid-0.5.0.tar.gz"
-url_api = "https://api.github.com/repos/lauritsk/pid/releases/assets/406898425"
+checksum = "sha256:c1bcef79f22168cb969eea7fa9a53a9bb007166ed9cd58d7c7bef8ed12db104e"
+url = "https://github.com/lauritsk/pid/releases/download/v0.5.1/pid-0.5.1.tar.gz"
+url_api = "https://api.github.com/repos/lauritsk/pid/releases/assets/406911203"
 
 [tools."github:lauritsk/pid"."platforms.macos-arm64"]
-checksum = "sha256:d3a738ad4d331233be5431bc8f69688ce284cc0c0cb6c11c4117f48ef1b84a8a"
-url = "https://github.com/lauritsk/pid/releases/download/v0.5.0/pid-0.5.0.tar.gz"
-url_api = "https://api.github.com/repos/lauritsk/pid/releases/assets/406898425"
+checksum = "sha256:c1bcef79f22168cb969eea7fa9a53a9bb007166ed9cd58d7c7bef8ed12db104e"
+url = "https://github.com/lauritsk/pid/releases/download/v0.5.1/pid-0.5.1.tar.gz"
+url_api = "https://api.github.com/repos/lauritsk/pid/releases/assets/406911203"
 provenance = "github-attestations"
 
 [tools."github:lauritsk/pid"."platforms.macos-x64"]
-checksum = "sha256:d3a738ad4d331233be5431bc8f69688ce284cc0c0cb6c11c4117f48ef1b84a8a"
-url = "https://github.com/lauritsk/pid/releases/download/v0.5.0/pid-0.5.0.tar.gz"
-url_api = "https://api.github.com/repos/lauritsk/pid/releases/assets/406898425"
+checksum = "sha256:c1bcef79f22168cb969eea7fa9a53a9bb007166ed9cd58d7c7bef8ed12db104e"
+url = "https://github.com/lauritsk/pid/releases/download/v0.5.1/pid-0.5.1.tar.gz"
+url_api = "https://api.github.com/repos/lauritsk/pid/releases/assets/406911203"
 
 [tools."github:lauritsk/pid"."platforms.windows-x64"]
-checksum = "sha256:d3a738ad4d331233be5431bc8f69688ce284cc0c0cb6c11c4117f48ef1b84a8a"
-url = "https://github.com/lauritsk/pid/releases/download/v0.5.0/pid-0.5.0.tar.gz"
-url_api = "https://api.github.com/repos/lauritsk/pid/releases/assets/406898425"
+checksum = "sha256:c1bcef79f22168cb969eea7fa9a53a9bb007166ed9cd58d7c7bef8ed12db104e"
+url = "https://github.com/lauritsk/pid/releases/download/v0.5.1/pid-0.5.1.tar.gz"
+url_api = "https://api.github.com/repos/lauritsk/pid/releases/assets/406911203"
 
 [[tools.goreleaser]]
 version = "2.15.4"

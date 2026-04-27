@@ -12,12 +12,91 @@ from pathlib import Path
 from typing import Any
 
 from pid.errors import abort
-from pid.output import echo_err
+from pid.output import echo_err, echo_out
 
 DEFAULT_THINKING_LEVELS = ("low", "medium", "high", "xhigh")
 AGENT_TEMPLATE_FIELDS = ("prompt", "thinking")
 COMMIT_TEMPLATE_FIELDS = ("title",)
 FORGE_TEMPLATE_FIELDS = ("branch", "title", "body", "pr_url", "head_oid")
+
+DEFAULT_CONFIG_TOML = """[agent]
+command = ["pi"]
+non_interactive_args = ["--thinking", "{thinking}", "-p", "{prompt}"]
+interactive_args = ["--thinking", "{thinking}"]
+default_thinking = "medium"
+review_thinking = "high"
+thinking_levels = ["low", "medium", "high", "xhigh"]
+label = "agent"
+
+[runtime]
+keep_screen_awake = false
+
+[commit]
+verifier_command = ["cog"]
+verifier_args = ["verify", "{title}"]
+automated_feedback_title = "fix: address automated feedback"
+rebase_feedback_title = "fix: resolve latest base changes"
+
+[forge]
+command = ["gh"]
+label = "github"
+default_branch_args = [
+  "repo",
+  "view",
+  "--json",
+  "defaultBranchRef",
+  "--jq",
+  ".defaultBranchRef.name",
+]
+pr_view_args = ["pr", "view", "{branch}"]
+pr_create_args = ["pr", "create", "--title", "{title}", "--body", "{body}"]
+pr_edit_args = ["pr", "edit", "{branch}", "--title", "{title}", "--body", "{body}"]
+pr_url_args = ["pr", "view", "{branch}", "--json", "url", "--jq", ".url"]
+pr_head_oid_args = [
+  "pr",
+  "view",
+  "{branch}",
+  "--json",
+  "headRefOid",
+  "--jq",
+  ".headRefOid",
+]
+pr_checks_args = ["pr", "checks", "{branch}"]
+pr_merge_args = [
+  "pr",
+  "merge",
+  "{branch}",
+  "--squash",
+  "--match-head-commit",
+  "{head_oid}",
+  "--subject",
+  "{title}",
+  "--body",
+  "{body}",
+]
+pr_merged_at_args = [
+  "pr",
+  "view",
+  "{pr_url}",
+  "--json",
+  "mergedAt",
+  "--jq",
+  '.mergedAt // ""',
+]
+checks_pending_exit_codes = [8]
+no_checks_markers = ["no checks"]
+
+[prompts]
+diagnostic_output_limit = 20000
+# message, review, ci_fix, and rebase_fix use long built-in templates.
+# Override any one with a TOML string or multiline string.
+
+[workflow]
+checks_timeout_seconds = 1800
+checks_poll_interval_seconds = 10
+merge_retry_limit = 20
+trust_mise = true
+"""
 
 MESSAGE_PROMPT_FIELDS = ("original_prompt", "branch", "base_rev", "output_path")
 REVIEW_PROMPT_FIELDS = ("original_prompt", "review_target")
@@ -307,6 +386,29 @@ def default_config_path() -> Path:
         return home / "Library" / "Application Support" / "pid" / "config.toml"
 
     return home / ".config" / "pid" / "config.toml"
+
+
+def init_config() -> Path:
+    """Write recommended defaults to the default config path."""
+
+    config_path = default_config_path()
+    try:
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as error:
+        echo_err(f"pid: could not write config at {config_path}: {error}")
+        abort(2)
+
+    try:
+        with config_path.open("x", encoding="utf-8") as config_file:
+            config_file.write(DEFAULT_CONFIG_TOML)
+    except FileExistsError:
+        echo_err(f"pid: config file already exists: {config_path}")
+        abort(2)
+    except OSError as error:
+        echo_err(f"pid: could not write config at {config_path}: {error}")
+        abort(2)
+    echo_out(f"pid: wrote config to {config_path}")
+    return config_path
 
 
 def load_config(path: Path | None = None) -> PIDConfig:

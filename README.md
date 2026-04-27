@@ -163,6 +163,16 @@ Inspection commands and options:
 pid loads TOML config from the platform default path, or from `--config PATH`.
 The default path is optional; an explicit `--config PATH` must exist.
 
+Create a default config file with recommended defaults:
+
+```sh
+pid init
+```
+
+The command writes to the platform default path and prints that path. It accepts
+no arguments, does not accept `--config`, and refuses to overwrite an existing
+config file.
+
 Default config paths:
 
 | Platform/env | Path |

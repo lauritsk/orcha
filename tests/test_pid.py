@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 
+import pytest
 from click.utils import strip_ansi
 from typer.testing import CliRunner
 
@@ -25,12 +26,49 @@ def test_app_shows_typer_help() -> None:
     output = strip_ansi(result.output)
 
     assert result.exit_code == 0
-    assert "Run pid." in output
+    assert "Run pid. Use `pid init` to create the default config." in output
     assert "[session] [ATTEMPTS] [THINKING] BRANCH" in output
     assert "--config" in output
     assert "pid sessions [--all|-a]" in output
     assert "pid config show|default|path" in output
     assert "Show this message and exit" in output
+
+
+def test_init_command_writes_default_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    result = runner.invoke(app, ["init"])
+
+    config_path = tmp_path / "xdg" / "pid" / "config.toml"
+    assert result.exit_code == 0
+    assert f"pid: wrote config to {config_path}" in result.output
+    assert config_path.exists()
+
+
+def test_init_command_rejects_arguments(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    result = runner.invoke(app, ["init", "extra"])
+
+    assert result.exit_code == 2
+    assert "pid: init does not accept arguments" in result.stderr
+    assert not (tmp_path / "xdg" / "pid" / "config.toml").exists()
+
+
+def test_init_command_rejects_explicit_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    result = runner.invoke(app, ["--config", str(tmp_path / "custom.toml"), "init"])
+
+    assert result.exit_code == 2
+    assert "pid: init does not accept --config" in result.stderr
+    assert not (tmp_path / "xdg" / "pid" / "config.toml").exists()
 
 
 def test_invalid_config_returns_usage_error(tmp_path: Path) -> None:

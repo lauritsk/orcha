@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 import pid.config as config_module
-from pid.config import default_config_path, load_config, parse_config
+from pid.config import default_config_path, init_config, load_config, parse_config
 from pid.errors import PIDAbort
 from pid.models import CommitMessage
 
@@ -55,6 +55,34 @@ def test_default_missing_config_path_uses_defaults(
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "missing-config-home"))
 
     assert load_config() == config_module.PIDConfig()
+
+
+def test_init_config_writes_recommended_defaults(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
+
+    config_path = init_config()
+
+    assert config_path == tmp_path / "config-home" / "pid" / "config.toml"
+    assert load_config() == config_module.PIDConfig()
+    assert "wrote config to" in capsys.readouterr().out
+
+
+def test_init_config_refuses_to_overwrite_existing_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config-home"))
+    config_path = default_config_path()
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text("[runtime]\nkeep_screen_awake = true\n")
+
+    with pytest.raises(PIDAbort) as exc_info:
+        init_config()
+
+    assert exc_info.value.code == 2
+    assert config_path.read_text() == "[runtime]\nkeep_screen_awake = true\n"
+    assert "config file already exists" in capsys.readouterr().err
 
 
 def test_runtime_keep_screen_awake_defaults_off(tmp_path: Path) -> None:

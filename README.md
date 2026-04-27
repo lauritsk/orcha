@@ -69,6 +69,9 @@ mise run test
 pid
 pid [ATTEMPTS] [THINKING] BRANCH PROMPT...
 pid session [ATTEMPTS] [THINKING] BRANCH [PROMPT...]
+pid sessions [--all|-a]
+pid config show|default|path
+pid --version
 ```
 
 Arguments:
@@ -90,6 +93,11 @@ pid 2 high fix/repair-ci "fix failing tests"
 pid docs/update-install update installation instructions
 pid session feature/explore-api
 pid session high feature/prototype-auth "explore auth UX options"
+pid sessions
+pid config show
+pid config default
+pid config path
+pid --version
 ```
 
 ### Interactive argument prompts
@@ -110,6 +118,17 @@ workflow:
 
 If stdin is not a TTY, pid keeps non-interactive behavior: missing required
 arguments print usage or validation errors instead of blocking for input.
+
+Inspection commands and options:
+
+| Command/option | Description |
+| --- | --- |
+| `pid sessions` | List active pid sessions from pid session logs, including current stage and log path. |
+| `pid sessions --all` / `-a` | List active, stale, and completed pid session logs. |
+| `pid config show` / `--print-config` | Print the loaded config as TOML. Honors `--config PATH`. |
+| `pid config default` / `--print-default-config` | Print built-in default config as TOML. |
+| `pid config path` | Print default/effective config path and session log directory. |
+| `pid version` / `--version` / `-v` | Print the installed pid version. |
 
 ## How it works
 
@@ -348,10 +367,11 @@ pr_merged_at_args = []
 
 Agent and forge CLI flags change over time; treat examples as starting points.
 
-Environment variables override the matching workflow config at runtime:
+Environment variables override the matching paths or workflow config at runtime:
 
 | Variable | Config default | Description |
 | --- | --- | --- |
+| `PID_LOG_DIR` | platform state/log directory | Directory where pid writes session logs and where `pid sessions` reads them. |
 | `PID_CHECKS_TIMEOUT_SECONDS` | `workflow.checks_timeout_seconds` | How long to wait for pending checks. |
 | `PID_CHECKS_POLL_INTERVAL_SECONDS` | `workflow.checks_poll_interval_seconds` | Delay between check polling attempts. |
 | `PID_MERGE_RETRY_LIMIT` | `workflow.merge_retry_limit` | Safety cap for moved-base merge/rebase retries that do not consume `ATTEMPTS`. |

@@ -9,7 +9,7 @@ from typing import Annotated
 import typer
 
 from pid import __version__
-from pid.config import PIDConfig, load_config
+from pid.config import PIDConfig, init_config, load_config
 from pid.diagnostics import active_sessions_table, config_to_toml, print_config_metadata
 from pid.errors import PIDAbort
 from pid.interactive import resolve_interactive_args
@@ -75,7 +75,7 @@ def main(
         ),
     ] = False,
 ) -> None:
-    """Run pid.
+    """Run pid. Use `pid init` to create the default config.
 
     Info commands:
 
@@ -97,6 +97,18 @@ def main(
         raise typer.Exit(0)
 
     try:
+        if raw_args and raw_args[0] == "init":
+            if config is not None:
+                echo_err(
+                    "pid: init does not accept --config; "
+                    "it always writes the default config path"
+                )
+                raise typer.Exit(2)
+            if len(raw_args) > 1:
+                echo_err("pid: init does not accept arguments")
+                raise typer.Exit(2)
+            init_config()
+            raise typer.Exit(0)
         loaded_config = load_config(config)
     except PIDAbort as error:
         raise typer.Exit(error.code) from error

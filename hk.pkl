@@ -3,10 +3,13 @@ import "package://github.com/jdx/hk/releases/download/v1.44.1/hk@1.44.1#/Builtin
 
 local linters = new Mapping<String, Step> {
   ["ruff"] = Builtins.ruff
+  ["ruff-format"] = Builtins.ruff_format
   ["ty"] = Builtins.ty
-  ["tombi"] = Builtins.tombi
   ["pkl"] = Builtins.pkl
   ["pkl-format"] = Builtins.pkl_format
+  ["tombi"] = Builtins.tombi
+  ["tombi-format"] = Builtins.tombi_format
+  ["rumdl"] = Builtins.rumdl
 }
 
 hooks {

@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import os
 import shutil
-import subprocess
 from pathlib import Path
+from subprocess import STDOUT
+
+from plumbum import local
+from plumbum.commands.processes import CommandNotFound
 
 from orcha.errors import abort
 from orcha.models import CommandResult
@@ -12,7 +16,7 @@ from orcha.output import echo_err, write_command_output
 
 
 class CommandRunner:
-    """Small subprocess wrapper preserving command output behavior."""
+    """Small plumbum wrapper preserving command output behavior."""
 
     def run(
         self,
@@ -22,31 +26,24 @@ class CommandRunner:
         combine_output: bool = False,
     ) -> CommandResult:
         try:
+            local.env.update(os.environ)
+            command = local[args[0]]
             if combine_output:
-                process = subprocess.run(
-                    args,
+                returncode, stdout, _stderr = command.run(
+                    args[1:],
                     cwd=cwd,
-                    text=True,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    check=False,
+                    stderr=STDOUT,
+                    retcode=None,
                 )
-                return CommandResult(process.returncode, process.stdout or "")
+                return CommandResult(returncode, stdout or "")
 
-            process = subprocess.run(
-                args,
+            returncode, stdout, stderr = command.run(
+                args[1:],
                 cwd=cwd,
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                check=False,
+                retcode=None,
             )
-            return CommandResult(
-                process.returncode,
-                process.stdout or "",
-                process.stderr or "",
-            )
-        except FileNotFoundError:
+            return CommandResult(returncode, stdout or "", stderr or "")
+        except CommandNotFound, FileNotFoundError:
             return CommandResult(127, "", f"orcha: command not found: {args[0]}\n")
 
     def require(

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import subprocess
 from pathlib import Path
 from subprocess import STDOUT
 
@@ -45,6 +46,20 @@ class CommandRunner:
             return CommandResult(returncode, stdout or "", stderr or "")
         except CommandNotFound, FileNotFoundError:
             return CommandResult(127, "", f"orcha: command not found: {args[0]}\n")
+
+    def run_interactive(
+        self,
+        args: list[str],
+        *,
+        cwd: str | Path | None = None,
+    ) -> CommandResult:
+        """Run a command attached to the current terminal."""
+
+        try:
+            completed = subprocess.run(args, cwd=cwd, check=False)
+        except FileNotFoundError:
+            return CommandResult(127, "", f"orcha: command not found: {args[0]}\n")
+        return CommandResult(completed.returncode, "", "")
 
     def require(
         self,

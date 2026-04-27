@@ -18,7 +18,10 @@ def test_no_args_prints_short_usage(tmp_path: Path) -> None:
     process, _ = run_orcha(tmp_path, [], commands=())
 
     assert_success(process)
-    assert process.stdout == "usage: orcha [ATTEMPTS] [THINKING] BRANCH PROMPT...\n"
+    assert (
+        process.stdout
+        == "usage: orcha [session] [ATTEMPTS] [THINKING] BRANCH [PROMPT...]\n"
+    )
 
 
 @pytest.mark.parametrize("args", [["--help"], ["-h"]])
@@ -27,7 +30,7 @@ def test_help_uses_typer_output(tmp_path: Path, args: list[str]) -> None:
 
     assert_success(process)
     assert "Run Orcha." in process.stdout
-    assert "[ATTEMPTS] [THINKING] BRANCH" in process.stdout
+    assert "[session] [ATTEMPTS] [THINKING] BRANCH" in process.stdout
 
 
 @pytest.mark.parametrize(
@@ -47,7 +50,10 @@ def test_argument_validation_errors(
 
     assert process.returncode == 2
     assert message in process.stderr
-    assert "usage: orcha [ATTEMPTS] [THINKING] BRANCH PROMPT..." in process.stderr
+    assert (
+        "usage: orcha [session] [ATTEMPTS] [THINKING] BRANCH [PROMPT...]"
+        in process.stderr
+    )
 
 
 def test_invalid_branch_name_stops_before_repo_setup(tmp_path: Path) -> None:
@@ -284,6 +290,56 @@ def test_initial_pi_failure_stops_before_review(tmp_path: Path) -> None:
     assert "pi exited with status 13" in process.stderr
     assert [call["kind"] for call in final_state["pi_calls"]] == ["initial"]
     assert final_state["pi_calls"][0]["thinking"] == "low"
+
+
+def test_session_mode_runs_interactive_pi_then_resumes_flow(tmp_path: Path) -> None:
+    state = base_state(tmp_path)
+
+    process, final_state = run_orcha(
+        tmp_path,
+        ["session", "2", "high", "feature/cool-stuff", "explore", "idea"],
+        state=state,
+    )
+
+    assert_success(process)
+    assert "launching interactive pi session" in process.stdout
+    assert "interactive pi session exited; resuming review/PR flow" in process.stdout
+    assert "orcha: PR attempt 1/2" in process.stdout
+    initial_call = final_state["pi_calls"][0]
+    assert initial_call["kind"] == "initial"
+    assert initial_call["interactive"] is True
+    assert "-p" not in initial_call["args"]
+    assert initial_call["thinking"] == "high"
+    assert initial_call["prompt"] == "explore idea"
+    assert final_state["pi_calls"][1]["kind"] == "review"
+
+
+def test_session_mode_allows_no_initial_prompt(tmp_path: Path) -> None:
+    state = base_state(tmp_path, pi_fail_kinds=["review"], pi_fail_status=17)
+
+    process, final_state = run_orcha(
+        tmp_path, ["session", "feature/cool-stuff"], state=state
+    )
+
+    assert process.returncode == 17
+    initial_call = final_state["pi_calls"][0]
+    review_call = final_state["pi_calls"][1]
+    assert initial_call["interactive"] is True
+    assert initial_call["prompt"] == ""
+    assert "Original request: Interactive pi session." in review_call["prompt"]
+
+
+def test_session_pi_failure_stops_before_review(tmp_path: Path) -> None:
+    state = base_state(tmp_path, pi_fail_kinds=["initial"], pi_fail_status=13)
+
+    process, final_state = run_orcha(
+        tmp_path, ["session", "low", "feature/cool-stuff"], state=state
+    )
+
+    assert process.returncode == 13
+    assert "pi exited with status 13" in process.stderr
+    assert [call["kind"] for call in final_state["pi_calls"]] == ["initial"]
+    assert final_state["pi_calls"][0]["interactive"] is True
 
 
 @pytest.mark.parametrize(

@@ -13,7 +13,8 @@ changes, retries when needed, squash-merges the PR, and cleans up the worktree.
 ## Features
 
 - Creates a clean branch in a sibling git worktree.
-- Runs non-interactive `pi -p` with selectable thinking level.
+- Runs either non-interactive `pi -p` or an interactive `pi` session.
+- Resumes automation after the interactive session exits.
 - Performs an automated review pass before committing.
 - Generates the commit and PR title/body from the final reviewed work.
 - Verifies the generated commit title with `cog`.
@@ -54,16 +55,18 @@ mise run test
 
 ```sh
 orcha [ATTEMPTS] [THINKING] BRANCH PROMPT...
+orcha session [ATTEMPTS] [THINKING] BRANCH [PROMPT...]
 ```
 
 Arguments:
 
 | Argument | Default | Description |
 | --- | --- | --- |
+| `session` | off | Use interactive `pi` instead of one-shot `pi -p`; Orcha resumes after `pi` exits. |
 | `ATTEMPTS` | `3` | Maximum PR/check/merge attempts. Must be a positive integer. |
 | `THINKING` | `medium` | Initial `pi` thinking level: `low`, `medium`, `high`, or `xhigh`. |
 | `BRANCH` | required | New branch name to create. Must not already exist locally or on `origin`. |
-| `PROMPT...` | required | Prompt passed to `pi -p`. |
+| `PROMPT...` | required for non-interactive; optional for `session` | Prompt passed to `pi -p`, or initial message for interactive `pi`. |
 
 Examples:
 
@@ -71,6 +74,8 @@ Examples:
 orcha feature/add-readme "add project docs"
 orcha 2 high fix/repair-ci "fix failing tests"
 orcha docs/update-install update installation instructions
+orcha session feature/explore-api
+orcha session high feature/prototype-auth "explore auth UX options"
 ```
 
 ## How it works
@@ -78,20 +83,22 @@ orcha docs/update-install update installation instructions
 1. Validates the branch name.
 2. Finds and updates the default branch in the main worktree.
 3. Creates a sibling worktree for the new branch.
-4. Runs `pi --thinking <level> -p <prompt>`.
-5. Runs a high-thinking `pi` review pass.
-6. Runs a high-thinking `pi` message pass that writes JSON metadata under the
+4. Runs `pi --thinking <level> -p <prompt>`, or interactive `pi` in
+   `session` mode.
+5. In `session` mode, waits until interactive `pi` exits.
+6. Runs a high-thinking `pi` review pass.
+7. Runs a high-thinking `pi` message pass that writes JSON metadata under the
    worktree git directory only.
-7. Refuses to continue if the message pass changes the worktree, omits the
+8. Refuses to continue if the message pass changes the worktree, omits the
    JSON, writes invalid JSON, or produces an invalid Conventional Commit title.
-8. Squashes any agent-authored commits plus dirty changes into one commit with
+9. Squashes any agent-authored commits plus dirty changes into one commit with
    the generated title/body, opens or updates a PR with the same title/body,
    then waits for GitHub checks.
-9. If checks fail, asks `pi` to fix them, commits that feedback, regenerates the
-   PR title/body from the updated diff, and retries.
-10. If squash merge fails because the base moved, rebases, regenerates the PR
+10. If checks fail, asks `pi` to fix them, commits that feedback, regenerates the
+    PR title/body from the updated diff, and retries.
+11. If squash merge fails because the base moved, rebases, regenerates the PR
     title/body when the branch changes, and retries.
-11. On confirmed merge, pulls the default branch and removes the worktree and branch.
+12. On confirmed merge, pulls the default branch and removes the worktree and branch.
 
 ## Configuration
 

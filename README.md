@@ -222,7 +222,6 @@ mise trust
 mise run lint
 mise run test
 mise run build
-mise run audit
 mise run check
 ```
 

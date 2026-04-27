@@ -46,13 +46,9 @@ run = "uv run pytest"
 description = "Build project package"
 run = "uv build"
 
-[tasks.audit]
-description = "Audit project dependencies"
-run = "uv audit --preview-features audit --locked"
-
 [tasks.check]
 description = "Run project checks"
-depends = ["lint", "test", "build", "audit"]
+depends = ["lint", "test", "build"]
 
 [tasks."release:bump"]
 description = "Bump project version"

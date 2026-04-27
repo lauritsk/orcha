@@ -29,8 +29,7 @@ Use `mise` tasks rather than invoking tools directly:
 | `mise run fix` | Run hk-managed formatters and fixers. |
 | `mise run test` | Run the pytest suite. |
 | `mise run build` | Build the Python package. |
-| `mise run audit` | Audit locked dependencies. |
-| `mise run check` | Run lint, test, build, and audit. |
+| `mise run check` | Run all project checks. |
 | `mise run release:bump` | Bump the package version. |
 | `mise run release:publish` | Publish a tagged release. |
 

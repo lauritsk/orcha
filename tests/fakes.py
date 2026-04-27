@@ -388,6 +388,9 @@ def cmd_pi(state, args):
     if kind in state.get("pi_fail_kinds", []):
         finish(state, int(state.get("pi_fail_status", 42)), err=f"pi {kind} failed")
 
+    pi_out = state.get(f"{kind}_pi_out", state.get("pi_out", ""))
+    pi_err = state.get(f"{kind}_pi_err", state.get("pi_err", ""))
+
     if kind == "initial" and state.get("initial_pi_commit_count") is not None:
         state["commit_count"] = state["initial_pi_commit_count"]
 
@@ -435,7 +438,7 @@ def cmd_pi(state, args):
         if state.get("dirty_after_rebase_fix"):
             state["worktree_dirty"] = state["dirty_after_rebase_fix"]
 
-    finish(state)
+    finish(state, out=pi_out, err=pi_err)
 
 
 def cmd_mise(state, args):
@@ -544,6 +547,7 @@ def run_orcha(
             "ORCHA_CHECKS_POLL_INTERVAL_SECONDS": str(
                 state.get("checks_poll_interval_seconds", 0)
             ),
+            "ORCHA_LOG_DIR": str(tmp_path / "logs"),
         }
     )
     runner = CliRunner()

@@ -14,10 +14,19 @@ from plumbum.commands.processes import CommandNotFound
 from orcha.errors import abort
 from orcha.models import CommandResult
 from orcha.output import echo_err, write_command_output
+from orcha.session_logging import SessionLogger
 
 
 class CommandRunner:
     """Small plumbum wrapper preserving command output behavior."""
+
+    def __init__(self, logger: SessionLogger | None = None) -> None:
+        self.logger = logger
+
+    def set_logger(self, logger: SessionLogger | None) -> None:
+        """Attach the active session logger."""
+
+        self.logger = logger
 
     def run(
         self,
@@ -26,6 +35,14 @@ class CommandRunner:
         cwd: str | Path | None = None,
         combine_output: bool = False,
     ) -> CommandResult:
+        command_log = None
+        if self.logger is not None:
+            command_log = self.logger.command_start(
+                args,
+                cwd=cwd,
+                combine_output=combine_output,
+            )
+
         try:
             local.env.update(os.environ)
             command = local[args[0]]
@@ -36,16 +53,24 @@ class CommandRunner:
                     stderr=STDOUT,
                     retcode=None,
                 )
-                return CommandResult(returncode, stdout or "")
-
-            returncode, stdout, stderr = command.run(
-                args[1:],
-                cwd=cwd,
-                retcode=None,
-            )
-            return CommandResult(returncode, stdout or "", stderr or "")
+                result = CommandResult(returncode, stdout or "")
+            else:
+                returncode, stdout, stderr = command.run(
+                    args[1:],
+                    cwd=cwd,
+                    retcode=None,
+                )
+                result = CommandResult(returncode, stdout or "", stderr or "")
         except CommandNotFound, FileNotFoundError:
-            return CommandResult(127, "", f"orcha: command not found: {args[0]}\n")
+            result = CommandResult(127, "", f"orcha: command not found: {args[0]}\n")
+        except Exception as error:
+            if command_log is not None and self.logger is not None:
+                self.logger.command_exception(command_log, error)
+            raise
+
+        if command_log is not None and self.logger is not None:
+            self.logger.command_result(command_log, result)
+        return result
 
     def run_interactive(
         self,
@@ -55,11 +80,27 @@ class CommandRunner:
     ) -> CommandResult:
         """Run a command attached to the current terminal."""
 
+        command_log = None
+        if self.logger is not None:
+            command_log = self.logger.command_start(
+                args,
+                cwd=cwd,
+                combine_output=False,
+            )
+
         try:
             completed = subprocess.run(args, cwd=cwd, check=False)
+            result = CommandResult(completed.returncode, "", "")
         except FileNotFoundError:
-            return CommandResult(127, "", f"orcha: command not found: {args[0]}\n")
-        return CommandResult(completed.returncode, "", "")
+            result = CommandResult(127, "", f"orcha: command not found: {args[0]}\n")
+        except Exception as error:
+            if command_log is not None and self.logger is not None:
+                self.logger.command_exception(command_log, error)
+            raise
+
+        if command_log is not None and self.logger is not None:
+            self.logger.command_result(command_log, result)
+        return result
 
     def require(
         self,

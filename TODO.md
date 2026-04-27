@@ -18,3 +18,5 @@
 - [x] Add plumbum command execution dependency
 - [ ] Add higher-level orchestrator agent (see `ORCHESTRATOR_AGENT_PLAN.md`)
 - [x] Fix thinking bump on rebase conflict-only failures
+- [x] Add session logging
+- [x] Review session logging implementation

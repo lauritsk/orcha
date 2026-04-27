@@ -13,11 +13,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import NoReturn, TextIO
 
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
+
 USAGE = "usage: orcha [ATTEMPTS] [THINKING] BRANCH PROMPT..."
 THINKING_LEVELS = ("low", "medium", "high", "xhigh")
 COMMIT_TYPE_RE = re.compile(
     r"^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?!?$"
 )
+OUT_CONSOLE = Console(highlight=False)
 
 
 @dataclass(frozen=True)
@@ -1002,22 +1008,32 @@ def abort(code: int) -> NoReturn:
 
 
 def print_commit_message(title: str) -> None:
-    echo_out("")
-    echo_out("orcha: commit message")
-    echo_out("────────────────────────────────────────")
-    echo_out(f"  {title}")
-    echo_out("────────────────────────────────────────")
-    echo_out("")
+    table = Table.grid(padding=(0, 1))
+    table.add_column(style="bold")
+    table.add_column()
+    table.add_row("commit", title)
+    OUT_CONSOLE.print(
+        Panel.fit(
+            table,
+            title=Text("orcha commit message", style="bold cyan"),
+            border_style="cyan",
+        )
+    )
 
 
 def print_merge_success(pr_title: str, pr_url: str) -> None:
-    echo_out("")
-    echo_out("orcha: github squash merged")
-    echo_out("────────────────────────────────────────")
-    echo_out(f"  commit: {pr_title}")
-    echo_out(f"  PR:     {pr_url}")
-    echo_out("────────────────────────────────────────")
-    echo_out("")
+    table = Table.grid(padding=(0, 1))
+    table.add_column(style="bold")
+    table.add_column()
+    table.add_row("commit", pr_title)
+    table.add_row("PR", pr_url)
+    OUT_CONSOLE.print(
+        Panel.fit(
+            table,
+            title=Text("orcha github squash merged", style="bold green"),
+            border_style="green",
+        )
+    )
 
 
 def run_orcha(argv: list[str]) -> int:

@@ -6,3 +6,4 @@
 - [x] Derive package version from metadata
 - [x] Tie audit task into mise check
 - [ ] Add docs when requested
+- [x] Add Rich visual output to CLI

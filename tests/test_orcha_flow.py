@@ -850,7 +850,8 @@ def test_dirty_work_is_committed_then_pr_created_and_merged(tmp_path: Path) -> N
     assert_success(process)
     assert "Created" in process.stdout
     assert "orcha: PR attempt 1/2" in process.stdout
-    assert "github squash merged" in process.stdout
+    assert "╭─ orcha commit message" in process.stdout
+    assert "╭──── orcha github squash merged" in process.stdout
     assert final_state["commit_messages"] == ["feat: cool stuff"]
     assert final_state["pi_calls"][0]["thinking"] == "high"
     assert final_state["pi_calls"][0]["prompt"] == "build thing"

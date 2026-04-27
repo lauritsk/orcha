@@ -28,7 +28,7 @@ run = "hk fix --all"
 
 [tasks.lint]
 description = "Run hk-managed checks across the repository"
-run = "hk check --all"
+run = "uv sync --locked --all-groups && hk check --all"
 
 [tasks.test]
 description = "Run test suite"

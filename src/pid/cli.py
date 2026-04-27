@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Annotated
 
@@ -9,6 +10,7 @@ import typer
 
 from pid.config import load_config
 from pid.errors import PIDAbort
+from pid.interactive import resolve_interactive_args
 from pid.workflow import run_pid
 
 APP_CONTEXT = {
@@ -48,6 +50,11 @@ def main(
     raw_args = [*(args or []), *ctx.args]
     try:
         loaded_config = load_config(config)
+        resolved_args = (
+            resolve_interactive_args(raw_args, loaded_config)
+            if sys.stdin.isatty()
+            else raw_args
+        )
     except PIDAbort as error:
         raise typer.Exit(error.code) from error
-    raise typer.Exit(run_pid(raw_args, config=loaded_config))
+    raise typer.Exit(run_pid(resolved_args, config=loaded_config))

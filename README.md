@@ -66,6 +66,7 @@ mise run test
 ## Usage
 
 ```sh
+pid
 pid [ATTEMPTS] [THINKING] BRANCH PROMPT...
 pid session [ATTEMPTS] [THINKING] BRANCH [PROMPT...]
 ```
@@ -83,12 +84,32 @@ Arguments:
 Examples:
 
 ```sh
+pid
 pid feature/add-readme "add project docs"
 pid 2 high fix/repair-ci "fix failing tests"
 pid docs/update-install update installation instructions
 pid session feature/explore-api
 pid session high feature/prototype-auth "explore auth UX options"
 ```
+
+### Interactive argument prompts
+
+When stdin is a TTY, pid fills missing values interactively before starting the
+workflow:
+
+- `pid` prompts for attempts, thinking level, branch, and prompt. Attempts and
+  thinking level show their configured defaults; press Enter to accept them.
+- `pid feature/some-feature` uses the supplied branch and prompts only for the
+  prompt.
+- `pid high` uses the supplied thinking level and prompts for branch and
+  prompt.
+- `pid session` prompts for branch only because the initial session prompt is
+  optional.
+- pid shows current values before each prompt and asks for final confirmation
+  before continuing.
+
+If stdin is not a TTY, pid keeps non-interactive behavior: missing required
+arguments print usage or validation errors instead of blocking for input.
 
 ## How it works
 

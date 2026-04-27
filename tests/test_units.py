@@ -8,15 +8,17 @@ import sys
 from pathlib import Path
 from typing import Any, cast
 
+import click
 import pytest
 
 import pid
 import pid.config as config_module
 import pid.cli as cli_module
 from pid.commands import CommandRunner, require_command
-from pid.config import AgentConfig, load_config, parse_config
+from pid.config import AgentConfig, PIDConfig, load_config, parse_config
 from pid.errors import PIDAbort
 from pid.models import CommandResult
+from pid.interactive import resolve_interactive_args
 from pid.output import (
     get_session_logger,
     set_session_logger,
@@ -244,6 +246,136 @@ def test_output_helpers_preserve_newline_behavior(
     assert captured.out == "no newline\n"
     assert stdout.getvalue() == "out\n"
     assert stderr.getvalue() == "err\n"
+
+
+def test_resolve_interactive_args_prompts_all_values_when_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    answers = iter(["3", "high", "feature/new-cli", "add guided prompts"])
+    monkeypatch.setattr("pid.interactive.click.prompt", lambda *_, **__: next(answers))
+    monkeypatch.setattr("pid.interactive.click.confirm", lambda *_, **__: True)
+
+    assert resolve_interactive_args([], PIDConfig()) == [
+        "3",
+        "high",
+        "feature/new-cli",
+        "add",
+        "guided",
+        "prompts",
+    ]
+
+
+def test_resolve_interactive_args_prompts_only_missing_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("pid.interactive.click.prompt", lambda *_, **__: "build thing")
+    monkeypatch.setattr("pid.interactive.click.confirm", lambda *_, **__: True)
+
+    assert resolve_interactive_args(["feature/x"], PIDConfig()) == [
+        "feature/x",
+        "build",
+        "thing",
+    ]
+
+
+def test_resolve_interactive_args_preserves_help_and_complete_args() -> None:
+    assert resolve_interactive_args(["--help"], PIDConfig()) == ["--help"]
+    assert resolve_interactive_args(["session", "--help"], PIDConfig()) == [
+        "session",
+        "--help",
+    ]
+    assert resolve_interactive_args(
+        ["2", "high", "feature/x", "build", "thing"], PIDConfig()
+    ) == ["2", "high", "feature/x", "build", "thing"]
+
+
+def test_resolve_interactive_args_prompts_branch_after_thinking(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    answers = iter(["feature/x", "build thing"])
+    monkeypatch.setattr("pid.interactive.click.prompt", lambda *_, **__: next(answers))
+    monkeypatch.setattr("pid.interactive.click.confirm", lambda *_, **__: True)
+
+    assert resolve_interactive_args(["high"], PIDConfig()) == [
+        "high",
+        "feature/x",
+        "build",
+        "thing",
+    ]
+
+
+def test_resolve_interactive_args_reprompts_invalid_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    answers = iter(["0", "2", "bad", "medium", "", "feature/x", "build"])
+    monkeypatch.setattr("pid.interactive.click.prompt", lambda *_, **__: next(answers))
+    monkeypatch.setattr("pid.interactive.click.confirm", lambda *_, **__: True)
+
+    assert resolve_interactive_args([], PIDConfig()) == [
+        "2",
+        "medium",
+        "feature/x",
+        "build",
+    ]
+
+
+def test_resolve_interactive_args_abort_on_rejected_confirmation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("pid.interactive.click.prompt", lambda *_, **__: "feature/x")
+    monkeypatch.setattr("pid.interactive.click.confirm", lambda *_, **__: False)
+
+    with pytest.raises(click.Abort):
+        resolve_interactive_args(["high"], PIDConfig())
+
+
+def test_resolve_interactive_args_preserves_invalid_supplied_attempts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_prompt(*_args: object, **_kwargs: object) -> str:
+        raise AssertionError("invalid supplied attempts should not prompt")
+
+    monkeypatch.setattr("pid.interactive.click.prompt", fail_prompt)
+
+    assert resolve_interactive_args(["0"], PIDConfig()) == ["0"]
+
+
+def test_main_resolves_interactive_args_when_stdin_is_tty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeContext:
+        args = ["prompt"]
+
+    class FakeStdin:
+        def isatty(self) -> bool:
+            return True
+
+    loaded_config = PIDConfig()
+    calls: list[tuple[str, list[str]]] = []
+
+    def fake_resolve(argv: list[str], config: PIDConfig) -> list[str]:
+        assert config is loaded_config
+        calls.append(("resolve", argv))
+        return ["resolved-branch", "resolved prompt"]
+
+    def fake_run_pid(argv: list[str], *, config: PIDConfig) -> int:
+        assert config is loaded_config
+        calls.append(("run", argv))
+        return 7
+
+    monkeypatch.setattr(cli_module.sys, "stdin", FakeStdin())
+    monkeypatch.setattr(cli_module, "load_config", lambda _path: loaded_config)
+    monkeypatch.setattr(cli_module, "resolve_interactive_args", fake_resolve)
+    monkeypatch.setattr(cli_module, "run_pid", fake_run_pid)
+
+    with pytest.raises(click.exceptions.Exit) as exc_info:
+        cli_module.main(cast(Any, FakeContext()), args=["feature/x"], config=None)
+
+    assert exc_info.value.exit_code == 7
+    assert calls == [
+        ("resolve", ["feature/x", "prompt"]),
+        ("run", ["resolved-branch", "resolved prompt"]),
+    ]
 
 
 def test_parse_args_session_help(capsys: pytest.CaptureFixture[str]) -> None:

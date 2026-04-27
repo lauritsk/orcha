@@ -1,5 +1,6 @@
 # TODO
 
+- [x] Configure GoReleaser cosign signing and Syft SBOMs
 - [ ] Refactor `wt.fish` into a Python/uv app
   - [x] Inventory current `wt.fish` behavior
   - [x] Decide recommended CLI/TUI direction

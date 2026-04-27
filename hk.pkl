@@ -10,6 +10,10 @@ local linters = new Mapping<String, Step> {
   ["tombi"] = Builtins.tombi
   ["tombi-format"] = Builtins.tombi_format
   ["rumdl"] = Builtins.rumdl
+  ["goreleaser"] = new Step {
+    glob = ".goreleaser.yaml"
+    check = "goreleaser check"
+  }
 }
 
 hooks {
@@ -24,5 +28,12 @@ hooks {
   }
   ["check"] {
     steps = linters
+  }
+  ["commit-msg"] {
+    steps {
+      ["cocogitto-commit-msg"] {
+        check = "cog --quiet verify --file {{commit_msg_file}}"
+      }
+    }
   }
 }

@@ -1,0 +1,48 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+version: 2
+
+builds:
+  - id: wheel
+    builder: uv
+    buildmode: wheel
+  - id: sdist
+    builder: uv
+    buildmode: sdist
+
+checksum:
+  name_template: "{{ .ProjectName }}_checksums.txt"
+
+sboms:
+  - artifacts: any
+    documents:
+      - "{{ .ProjectName }}_{{ .Version }}_sbom.spdx.json"
+    args:
+      - "."
+      - "--output"
+      - "spdx-json=$document"
+      - "--enrich"
+      - "all"
+
+signs:
+  - cmd: cosign
+    signature: "${artifact}.sigstore.json"
+    args:
+      - "sign-blob"
+      - "--bundle=${signature}"
+      - "${artifact}"
+      - "--yes"
+    artifacts: checksum
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+
+release:
+  footer: >-
+
+    ---
+
+    Released by [GoReleaser](https://github.com/goreleaser/goreleaser).

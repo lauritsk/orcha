@@ -10,7 +10,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from orcha.models import CommandResult
+from orcha.models import CommandResult, CommitMessage
 
 OUT_CONSOLE = Console(highlight=False)
 
@@ -45,13 +45,14 @@ def echo_err(message: str) -> None:
     print(message, file=sys.stderr)
 
 
-def print_commit_message(title: str) -> None:
+def print_commit_message(message: CommitMessage) -> None:
     """Print the commit message preview panel."""
 
     table = Table.grid(padding=(0, 1))
     table.add_column(style="bold")
     table.add_column()
-    table.add_row("commit", title)
+    table.add_row("commit", message.title)
+    table.add_row("body", message.body)
     OUT_CONSOLE.print(
         Panel.fit(
             table,

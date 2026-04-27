@@ -1,5 +1,6 @@
 # TODO
 
+- [x] Add AI-authored commit and PR messages
 - [x] Apply refactor skill to project
 - [x] Refactor project structure and code smells
 - [x] Sync docs for renamed release tasks

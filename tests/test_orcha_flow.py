@@ -63,30 +63,21 @@ def test_invalid_branch_name_stops_before_repo_setup(tmp_path: Path) -> None:
     assert not calls(final_state, "git", "rev-parse", "--show-toplevel")
 
 
-@pytest.mark.parametrize(
-    ("branch", "expected_title"),
-    [
-        ("feature/add_api", "feat: add api"),
-        ("fix/---", "fix: work"),
-        ("weird/add-thing", "chore: weird add thing"),
-        ("docs(scope)!/update-readme", "docs(scope)!: update readme"),
-    ],
-)
-def test_commit_title_is_derived_from_branch(
-    tmp_path: Path, branch: str, expected_title: str
-) -> None:
-    state = base_state(tmp_path, branch=branch)
+def test_generated_commit_title_is_validated_with_cog(tmp_path: Path) -> None:
+    state = base_state(
+        tmp_path,
+        branch="work/rough-name",
+        generated_commit_title="docs: explain setup flow",
+    )
 
     process, final_state = run_orcha(
         tmp_path,
-        [branch, "prompt"],
+        ["work/rough-name", "prompt"],
         state=state,
-        commands=("git", "cog"),
     )
 
-    assert process.returncode == 1
-    assert "pi is required" in process.stderr
-    assert ["verify", expected_title] in [
+    assert_success(process)
+    assert ["verify", "docs: explain setup flow"] in [
         call["args"] for call in calls(final_state, "cog")
     ]
 
@@ -96,12 +87,6 @@ def test_commit_title_is_derived_from_branch(
     [
         ({"repo_root_fail": True}, ("git",), "not inside a git repository", 1),
         ({}, ("git",), "cog is required", 1),
-        (
-            {"cog_fail": True, "cog_status": 7},
-            ("git", "cog"),
-            "bad conventional commit",
-            7,
-        ),
         ({}, ("git", "cog"), "pi is required", 1),
         ({}, ("git", "cog", "pi"), "gh is required", 1),
     ],
@@ -364,20 +349,60 @@ def test_dirty_work_is_committed_then_pr_created_and_merged(tmp_path: Path) -> N
     assert_success(process)
     assert "Created" in process.stdout
     assert "orcha: PR attempt 1/2" in process.stdout
-    assert "╭─ orcha commit message" in process.stdout
+    assert "orcha commit message" in process.stdout
     assert "╭──── orcha github squash merged" in process.stdout
-    assert final_state["commit_messages"] == ["feat: cool stuff"]
+    assert final_state["commit_messages"] == ["feat: implement cool stuff"]
+    assert final_state["commit_bodies"] == [
+        "- Implements the requested cool stuff.\n- Updates tests and docs as needed."
+    ]
     assert final_state["pi_calls"][0]["thinking"] == "high"
     assert final_state["pi_calls"][0]["prompt"] == "build thing"
-    assert ["pr", "create", "--title", "feat: cool stuff", "--body", ""] in [
-        call["args"] for call in calls(final_state, "gh", "pr", "create")
-    ]
+    assert final_state["pi_calls"][2]["kind"] == "message"
+    assert final_state["pi_calls"][2]["thinking"] == "high"
+    assert "Original request: build thing" in final_state["pi_calls"][2]["prompt"]
+    assert [
+        "pr",
+        "create",
+        "--title",
+        "feat: implement cool stuff",
+        "--body",
+        "- Implements the requested cool stuff.\n- Updates tests and docs as needed.",
+    ] in [call["args"] for call in calls(final_state, "gh", "pr", "create")]
+    assert final_state["merge_subject"] == "feat: implement cool stuff"
+    assert final_state["merge_body"] == (
+        "- Implements the requested cool stuff.\n- Updates tests and docs as needed."
+    )
     assert ["push", "-u", "origin", "feature/cool-stuff"] in [
         call["args"][-4:] for call in calls(final_state, "git", "push")
     ]
     assert ["push", "origin", "--delete", "feature/cool-stuff"] in [
         call["args"][-4:] for call in calls(final_state, "git", "push")
     ]
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"message_skip_output": True}, "did not write commit metadata"),
+        ({"message_json": "not json"}, "not valid JSON"),
+        ({"message_json": '{"title":"feat: ok","body":""}'}, "body is empty"),
+        ({"message_agent_changes": True}, "pi message changed the worktree"),
+        ({"cog_fail": True, "cog_status": 7}, "bad conventional commit"),
+    ],
+)
+def test_message_generation_failures_stop_before_commit(
+    tmp_path: Path, overrides: dict[str, Any], message: str
+) -> None:
+    state = base_state(tmp_path, **overrides)
+
+    process, final_state = run_orcha(
+        tmp_path, ["feature/cool-stuff", "prompt"], state=state
+    )
+
+    assert process.returncode != 0
+    assert message in combined_output(process)
+    assert not final_state.get("commit_messages")
+    assert not calls(final_state, "gh", "pr", "create")
 
 
 def test_prompt_preserves_unknown_option_like_words(tmp_path: Path) -> None:
@@ -393,7 +418,7 @@ def test_prompt_preserves_unknown_option_like_words(tmp_path: Path) -> None:
     assert final_state["pi_calls"][0]["prompt"] == "use --flag value"
 
 
-def test_existing_commits_with_dirty_review_changes_commit_followup(
+def test_existing_commits_are_squashed_to_generated_message(
     tmp_path: Path,
 ) -> None:
     state = base_state(tmp_path, commit_count=1, last_commit_title="feat: existing")
@@ -403,7 +428,10 @@ def test_existing_commits_with_dirty_review_changes_commit_followup(
     )
 
     assert_success(process)
-    assert "fix: address follow-up changes" in final_state["commit_messages"]
+    assert final_state["commit_messages"] == ["feat: implement cool stuff"]
+    assert ["reset", "--soft", "base123"] in [
+        call["args"] for call in calls(final_state, "git", "reset", "--soft")
+    ]
 
 
 def test_dirty_after_commit_stops_before_pr(tmp_path: Path) -> None:
@@ -503,6 +531,42 @@ def test_ci_failure_invokes_followup_pi_and_retries_with_bumped_thinking(
         in process.stdout
     )
     assert "orcha: PR attempt 2/3" in process.stdout
+
+
+def test_ci_fix_regenerates_pr_and_squash_message(tmp_path: Path) -> None:
+    state = base_state(
+        tmp_path,
+        checks_sequence=[
+            {"status": 1, "out": "unit tests failed"},
+            {"status": 0, "out": "checks passed"},
+        ],
+        generated_messages=[
+            {
+                "title": "feat: add first draft",
+                "body": "- Adds the initial implementation.",
+            },
+            {
+                "title": "fix: harden generated workflow",
+                "body": "- Adds the implementation.\n- Fixes CI failures.",
+            },
+        ],
+    )
+
+    process, final_state = run_orcha(
+        tmp_path, ["feature/cool-stuff", "prompt"], state=state
+    )
+
+    assert_success(process)
+    assert [call["kind"] for call in final_state["pi_calls"]].count("message") == 2
+    assert final_state["pr_title"] == "fix: harden generated workflow"
+    assert final_state["pr_body"] == "- Adds the implementation.\n- Fixes CI failures."
+    assert final_state["merge_subject"] == "fix: harden generated workflow"
+    assert (
+        final_state["merge_body"] == "- Adds the implementation.\n- Fixes CI failures."
+    )
+    assert ["verify", "fix: harden generated workflow"] in [
+        call["args"] for call in calls(final_state, "cog")
+    ]
 
 
 def test_ci_failure_on_last_attempt_leaves_pr_open(tmp_path: Path) -> None:

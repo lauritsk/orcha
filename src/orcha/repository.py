@@ -8,6 +8,7 @@ from pathlib import Path
 
 from orcha.commands import CommandRunner
 from orcha.errors import abort
+from orcha.models import CommitMessage
 from orcha.output import echo_err, echo_out, write_command_output
 from orcha.utils import has_output
 
@@ -185,29 +186,34 @@ class Repository:
         return hashlib.sha256(b"".join(parts)).hexdigest()
 
     def commit_initial_changes(
-        self, base_rev: str, worktree_path: str, branch_commit_title: str
+        self, base_rev: str, worktree_path: str, commit_message: CommitMessage
     ) -> None:
-        """Commit initial pi output, including dirty review changes."""
+        """Commit reviewed pi output as one generated-message commit."""
 
         commit_count = self.count_commits(base_rev, worktree_path)
         dirty = self.output(
             ["status", "--porcelain", "--untracked-files=all"], cwd=worktree_path
         )
 
-        if commit_count == 0:
-            if not has_output(dirty):
-                echo_out("orcha: no changes or commits after pi; stopping before PR")
-                abort(0)
-            self.runner.require(["git", "add", "-A"], cwd=worktree_path)
-            self.runner.require(
-                ["git", "commit", "-m", branch_commit_title], cwd=worktree_path
-            )
-        elif has_output(dirty):
-            self.runner.require(["git", "add", "-A"], cwd=worktree_path)
-            self.runner.require(
-                ["git", "commit", "-m", "fix: address follow-up changes"],
-                cwd=worktree_path,
-            )
+        if commit_count == 0 and not has_output(dirty):
+            echo_out("orcha: no changes or commits after pi; stopping before PR")
+            abort(0)
+
+        if commit_count > 0:
+            self.runner.require(["git", "reset", "--soft", base_rev], cwd=worktree_path)
+
+        self.runner.require(["git", "add", "-A"], cwd=worktree_path)
+        self.runner.require(
+            [
+                "git",
+                "commit",
+                "-m",
+                commit_message.title,
+                "-m",
+                commit_message.body,
+            ],
+            cwd=worktree_path,
+        )
 
         dirty = self.output(
             ["status", "--porcelain", "--untracked-files=all"], cwd=worktree_path

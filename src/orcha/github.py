@@ -8,7 +8,7 @@ from pathlib import Path
 
 from orcha.commands import CommandRunner
 from orcha.errors import abort
-from orcha.models import CommandResult
+from orcha.models import CommandResult, CommitMessage
 from orcha.output import echo_err, write_collected, write_command_output
 from orcha.utils import has_output
 
@@ -20,14 +20,22 @@ class GitHub:
         self.runner = runner
 
     def ensure_pr(
-        self, branch: str, branch_commit_title: str, worktree_path: str
+        self, branch: str, message: CommitMessage, worktree_path: str
     ) -> None:
         """Create a pull request or update the title/body of an existing one."""
 
         view_result = self.runner.run(["gh", "pr", "view", branch], cwd=worktree_path)
         if view_result.returncode != 0:
             create_result = self.runner.run(
-                ["gh", "pr", "create", "--title", branch_commit_title, "--body", ""],
+                [
+                    "gh",
+                    "pr",
+                    "create",
+                    "--title",
+                    message.title,
+                    "--body",
+                    message.body,
+                ],
                 cwd=worktree_path,
             )
             if create_result.returncode != 0:
@@ -38,7 +46,16 @@ class GitHub:
             return
 
         self.runner.require(
-            ["gh", "pr", "edit", branch, "--title", branch_commit_title, "--body", ""],
+            [
+                "gh",
+                "pr",
+                "edit",
+                branch,
+                "--title",
+                message.title,
+                "--body",
+                message.body,
+            ],
             cwd=worktree_path,
         )
 
@@ -94,7 +111,7 @@ class GitHub:
                 time.sleep(poll_interval_seconds)
 
     def squash_merge(
-        self, branch: str, head_oid: str, pr_title: str, worktree_path: str
+        self, branch: str, head_oid: str, message: CommitMessage, worktree_path: str
     ) -> CommandResult:
         """Attempt a guarded squash merge for a pull request."""
 
@@ -108,9 +125,9 @@ class GitHub:
                 "--match-head-commit",
                 head_oid,
                 "--subject",
-                pr_title,
+                message.title,
                 "--body",
-                "",
+                message.body,
             ],
             cwd=worktree_path,
             combine_output=True,

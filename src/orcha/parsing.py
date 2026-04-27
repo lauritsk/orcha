@@ -1,4 +1,4 @@
-"""Argument parsing and branch-to-commit-title helpers."""
+"""Argument parsing helpers."""
 
 from __future__ import annotations
 
@@ -10,9 +10,6 @@ from orcha.output import echo_err, echo_out
 
 USAGE = "usage: orcha [ATTEMPTS] [THINKING] BRANCH PROMPT..."
 THINKING_LEVELS = ("low", "medium", "high", "xhigh")
-COMMIT_TYPE_RE = re.compile(
-    r"^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?!?$"
-)
 
 
 def parse_args(argv: list[str]) -> ParsedArgs:
@@ -53,25 +50,6 @@ def parse_args(argv: list[str]) -> ParsedArgs:
         abort(2)
 
     return ParsedArgs(max_attempts, thinking_level, branch, prompt)
-
-
-def derive_commit_title(branch: str) -> str:
-    """Derive a Conventional Commit title from a branch name."""
-
-    raw_type = "chore"
-    subject = branch
-    if "/" in branch:
-        raw_type, subject = branch.split("/", 1)
-
-    commit_type = "feat" if raw_type == "feature" else raw_type
-    if COMMIT_TYPE_RE.fullmatch(commit_type) is None:
-        commit_type = "chore"
-        subject = branch
-
-    subject = re.sub(r"[-_/]+", " ", subject).strip()
-    if not subject:
-        subject = "work"
-    return f"{commit_type}: {subject}"
 
 
 def bump_thinking(level: str) -> str:

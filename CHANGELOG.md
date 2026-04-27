@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## [v0.5.1](https://github.com/lauritsk/pid/compare/ee638f50697445bb865de1966c506d813958a707..v0.5.1) - 2026-04-27
+#### Bug Fixes
+- wait for merge confirmation before cleanup - ([6722767](https://github.com/lauritsk/pid/commit/6722767fef024892bb7783428057ab6d6ac49a23)) - Karl Hans Laurits
+#### Miscellaneous Chores
+- update pid tool here - ([ee638f5](https://github.com/lauritsk/pid/commit/ee638f50697445bb865de1966c506d813958a707)) - Karl Hans Laurits
+
+- - -
+
 ## [v0.5.0](https://github.com/lauritsk/pid/compare/fe956edad11d52c0fd382d71435b890bb4e99413..v0.5.0) - 2026-04-27
 #### Features
 - add bounded base refresh checkpoints - ([1be2f07](https://github.com/lauritsk/pid/commit/1be2f07afd320f993d243992e9f7cc5bf62c3c85)) - Karl Hans Laurits

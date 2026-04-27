@@ -51,43 +51,13 @@ class OrchaFlow:
 
         validate_branch_name(self.runner, parsed.branch)
 
-        repo_root_result = self.runner.run(["git", "rev-parse", "--show-toplevel"])
-        if repo_root_result.returncode != 0:
-            echo_err("orcha: not inside a git repository")
-            abort(1)
-        repo_root = repo_root_result.stdout.strip()
-        if not repo_root:
-            echo_err("orcha: not inside a git repository")
-            abort(1)
-
-        require_command("cog", "orcha: cog is required for commit message verification")
-        print_commit_message(branch_commit_title)
-        cog_result = self.runner.run(
-            ["cog", "verify", branch_commit_title], combine_output=True
-        )
-        if cog_result.returncode != 0:
-            write_collected(cog_result.stdout, stream=sys.stderr)
-            abort(cog_result.returncode)
+        repo_root = self.resolve_repo_root()
+        self.verify_commit_title(branch_commit_title)
 
         require_command("pi", "orcha: pi is required")
         require_command("gh", "orcha: gh is required for PR creation")
 
-        common_git_dir_result = self.runner.run(
-            [
-                "git",
-                "rev-parse",
-                "--path-format=absolute",
-                "--git-common-dir",
-            ]
-        )
-        if common_git_dir_result.returncode != 0:
-            echo_err("orcha: could not determine common git dir")
-            abort(1)
-        common_git_dir = common_git_dir_result.stdout.strip()
-        if not common_git_dir:
-            echo_err("orcha: could not determine common git dir")
-            abort(1)
-        main_worktree = str(Path(common_git_dir).parent)
+        main_worktree = self.resolve_main_worktree()
 
         main_dirty = self.repository.output(
             ["status", "--porcelain", "--untracked-files=all"], cwd=main_worktree
@@ -115,17 +85,12 @@ class OrchaFlow:
         if shutil.which("mise") is not None:
             self.runner.require(["mise", "trust", "."], cwd=worktree_path)
 
-        pi_result = self.runner.run(
-            ["pi", "--thinking", parsed.thinking_level, "-p", parsed.prompt],
+        self.run_pi_prompt(
+            parsed.prompt,
             cwd=worktree_path,
+            thinking_level=parsed.thinking_level,
+            failure_context="stopping before review/commit/PR",
         )
-        if pi_result.returncode != 0:
-            write_command_output(pi_result)
-            echo_err(
-                f"orcha: pi exited with status {pi_result.returncode}; "
-                "stopping before review/commit/PR"
-            )
-            abort(pi_result.returncode)
 
         initial_commit_count = self.repository.count_commits(base_rev, worktree_path)
         initial_dirty = self.repository.output(
@@ -140,16 +105,13 @@ class OrchaFlow:
             original_prompt=parsed.prompt,
             review_target=review_target,
         )
-        pi_result = self.runner.run(
-            ["pi", "--thinking", "high", "-p", review_prompt], cwd=worktree_path
+        self.run_pi_prompt(
+            review_prompt,
+            cwd=worktree_path,
+            thinking_level="high",
+            failure_context="stopping before commit/PR",
+            label="pi review",
         )
-        if pi_result.returncode != 0:
-            write_command_output(pi_result)
-            echo_err(
-                f"orcha: pi review exited with status {pi_result.returncode}; "
-                "stopping before commit/PR"
-            )
-            abort(pi_result.returncode)
 
         post_review_state_hash = self.repository.state_hash(worktree_path)
         if pre_review_state_hash != post_review_state_hash:
@@ -347,18 +309,12 @@ class OrchaFlow:
             commit_title=commit_title,
             checks_out=checks_out,
         )
-        pi_args = ["pi"]
-        if followup_thinking_level:
-            pi_args.extend(["--thinking", followup_thinking_level])
-        pi_args.extend(["-p", prompt])
-
-        pi_result = self.runner.run(pi_args, cwd=worktree_path)
-        if pi_result.returncode != 0:
-            write_command_output(pi_result)
-            echo_err(
-                f"orcha: pi exited with status {pi_result.returncode} while fixing CI"
-            )
-            abort(pi_result.returncode)
+        self.run_pi_prompt(
+            prompt,
+            cwd=worktree_path,
+            thinking_level=followup_thinking_level,
+            failure_context="while fixing CI",
+        )
 
         return self.bump_after_followup(followup_thinking_level)
 
@@ -380,20 +336,81 @@ class OrchaFlow:
             commit_title=commit_title,
             merge_out=merge_out,
         )
-        pi_args = ["pi"]
-        if followup_thinking_level:
-            pi_args.extend(["--thinking", followup_thinking_level])
-        pi_args.extend(["-p", prompt])
-
-        pi_result = self.runner.run(pi_args, cwd=worktree_path)
-        if pi_result.returncode != 0:
-            write_command_output(pi_result)
-            echo_err(
-                f"orcha: pi exited with status {pi_result.returncode} while resolving rebase"
-            )
-            abort(pi_result.returncode)
+        self.run_pi_prompt(
+            prompt,
+            cwd=worktree_path,
+            thinking_level=followup_thinking_level,
+            failure_context="while resolving rebase",
+        )
 
         return self.bump_after_followup(followup_thinking_level)
+
+    def resolve_repo_root(self) -> str:
+        """Return the current git repository root or abort with Orcha's message."""
+
+        return self.require_git_output(
+            ["rev-parse", "--show-toplevel"],
+            error_message="orcha: not inside a git repository",
+        )
+
+    def resolve_main_worktree(self) -> str:
+        """Return the main worktree path from git's common directory."""
+
+        common_git_dir = self.require_git_output(
+            ["rev-parse", "--path-format=absolute", "--git-common-dir"],
+            error_message="orcha: could not determine common git dir",
+        )
+        return str(Path(common_git_dir).parent)
+
+    def require_git_output(self, args: list[str], *, error_message: str) -> str:
+        """Run a git command and abort when it fails or prints no stdout."""
+
+        result = self.runner.run(["git", *args])
+        output = result.stdout.strip()
+        if result.returncode == 0 and output:
+            return output
+        echo_err(error_message)
+        abort(1)
+
+    def verify_commit_title(self, branch_commit_title: str) -> None:
+        """Verify the derived commit title with cocogitto."""
+
+        require_command("cog", "orcha: cog is required for commit message verification")
+        print_commit_message(branch_commit_title)
+        cog_result = self.runner.run(
+            ["cog", "verify", branch_commit_title], combine_output=True
+        )
+        if cog_result.returncode != 0:
+            write_collected(cog_result.stdout, stream=sys.stderr)
+            abort(cog_result.returncode)
+
+    def run_pi_prompt(
+        self,
+        prompt: str,
+        *,
+        cwd: str,
+        thinking_level: str,
+        failure_context: str,
+        label: str = "pi",
+    ) -> None:
+        """Run pi with a prompt, preserving Orcha's failure handling."""
+
+        pi_args = ["pi"]
+        if thinking_level:
+            pi_args.extend(["--thinking", thinking_level])
+        pi_args.extend(["-p", prompt])
+
+        pi_result = self.runner.run(pi_args, cwd=cwd)
+        if pi_result.returncode == 0:
+            return
+
+        write_command_output(pi_result)
+        separator = " " if failure_context.startswith("while ") else "; "
+        echo_err(
+            f"orcha: {label} exited with status {pi_result.returncode}"
+            f"{separator}{failure_context}"
+        )
+        abort(pi_result.returncode)
 
     def bump_after_followup(self, followup_thinking_level: str) -> str:
         if not self.review_rejected_first_pass or not followup_thinking_level:

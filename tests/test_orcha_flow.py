@@ -378,6 +378,8 @@ def test_review_prompt_targets_commits_dirty_or_empty_work(
     assert review_call["kind"] == "review"
     assert review_call["thinking"] == "high"
     assert expected_review_target in review_call["prompt"]
+    assert "Check whether required tests were added" in review_call["prompt"]
+    assert "add or update the tests" in review_call["prompt"]
     assert "Original request: original request" in review_call["prompt"]
 
 

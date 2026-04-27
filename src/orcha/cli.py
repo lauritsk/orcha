@@ -23,8 +23,8 @@ def main(
     args: Annotated[
         list[str] | None,
         typer.Argument(
-            help="Attempts, thinking level, branch name, then prompt words.",
-            metavar="[ATTEMPTS] [THINKING] BRANCH PROMPT...",
+            help="Optional session mode, attempts, thinking level, branch, then prompt words.",
+            metavar="[session] [ATTEMPTS] [THINKING] BRANCH [PROMPT...]",
         ),
     ] = None,
 ) -> None:

@@ -22,6 +22,8 @@ class ParsedArgs:
     thinking_level: str
     branch: str
     prompt: str
+    interactive: bool = False
+    interactive_prompt: str | None = None
 
 
 @dataclass(frozen=True)

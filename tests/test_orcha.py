@@ -9,7 +9,10 @@ def test_app_prints_short_usage_by_default() -> None:
     result = runner.invoke(app)
 
     assert result.exit_code == 0
-    assert result.output == "usage: orcha [ATTEMPTS] [THINKING] BRANCH PROMPT...\n"
+    assert (
+        result.output
+        == "usage: orcha [session] [ATTEMPTS] [THINKING] BRANCH [PROMPT...]\n"
+    )
 
 
 def test_app_shows_typer_help() -> None:
@@ -17,5 +20,5 @@ def test_app_shows_typer_help() -> None:
 
     assert result.exit_code == 0
     assert "Run Orcha." in result.output
-    assert "[ATTEMPTS] [THINKING] BRANCH" in result.output
+    assert "[session] [ATTEMPTS] [THINKING] BRANCH" in result.output
     assert "Show this message and exit" in result.output

@@ -1,6 +1,7 @@
 # TODO
 
 - [x] Add AI-authored commit and PR messages
+- [x] Add interactive session flow
 - [x] Apply refactor skill to project
 - [x] Refactor project structure and code smells
 - [x] Sync docs for renamed release tasks

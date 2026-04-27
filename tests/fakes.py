@@ -340,7 +340,20 @@ def cmd_gh(state, args):
 def prompt_from_args(args):
     if "-p" in args:
         return args[args.index("-p") + 1]
-    return ""
+
+    messages = []
+    skip_next = False
+    for arg in args:
+        if skip_next:
+            skip_next = False
+            continue
+        if arg in {"--thinking", "--model", "--provider", "--session"}:
+            skip_next = True
+            continue
+        if arg.startswith("-"):
+            continue
+        messages.append(arg)
+    return " ".join(messages)
 
 
 def thinking_from_args(args):
@@ -363,7 +376,13 @@ def cmd_pi(state, args):
         kind = "initial"
 
     state.setdefault("pi_calls", []).append(
-        {"kind": kind, "thinking": thinking_from_args(args), "prompt": prompt, "args": args}
+        {
+            "kind": kind,
+            "thinking": thinking_from_args(args),
+            "prompt": prompt,
+            "args": args,
+            "interactive": "-p" not in args,
+        }
     )
 
     if kind in state.get("pi_fail_kinds", []):

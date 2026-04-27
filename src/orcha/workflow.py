@@ -84,12 +84,19 @@ class OrchaFlow:
         if shutil.which("mise") is not None:
             self.runner.require(["mise", "trust", "."], cwd=worktree_path)
 
-        self.run_pi_prompt(
-            parsed.prompt,
-            cwd=worktree_path,
-            thinking_level=parsed.thinking_level,
-            failure_context="stopping before review/commit/PR",
-        )
+        if parsed.interactive:
+            self.run_pi_session(
+                parsed.interactive_prompt,
+                cwd=worktree_path,
+                thinking_level=parsed.thinking_level,
+            )
+        else:
+            self.run_pi_prompt(
+                parsed.prompt,
+                cwd=worktree_path,
+                thinking_level=parsed.thinking_level,
+                failure_context="stopping before review/commit/PR",
+            )
 
         initial_commit_count = self.repository.count_commits(base_rev, worktree_path)
         initial_dirty = self.repository.output(
@@ -452,6 +459,36 @@ class OrchaFlow:
         if cog_result.returncode != 0:
             write_collected(cog_result.stdout, stream=sys.stderr)
             abort(cog_result.returncode)
+
+    def run_pi_session(
+        self,
+        prompt: str | None,
+        *,
+        cwd: str,
+        thinking_level: str,
+    ) -> None:
+        """Run interactive pi in the worktree, then return to Orcha."""
+
+        pi_args = ["pi"]
+        if thinking_level:
+            pi_args.extend(["--thinking", thinking_level])
+        if prompt:
+            pi_args.append(prompt)
+
+        echo_out(
+            "orcha: launching interactive pi session; exit pi to resume review/PR flow"
+        )
+        pi_result = self.runner.run_interactive(pi_args, cwd=cwd)
+        if pi_result.returncode == 0:
+            echo_out("orcha: interactive pi session exited; resuming review/PR flow")
+            return
+
+        write_command_output(pi_result)
+        echo_err(
+            f"orcha: pi exited with status {pi_result.returncode}; "
+            "stopping before review/commit/PR"
+        )
+        abort(pi_result.returncode)
 
     def run_pi_prompt(
         self,

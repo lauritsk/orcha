@@ -10,7 +10,9 @@ local linters = new Mapping<String, Step> {
   ["pkl-format"] = Builtins.pkl_format
   ["tombi"] = Builtins.tombi
   ["tombi-format"] = Builtins.tombi_format
-  ["rumdl"] = Builtins.rumdl
+  ["rumdl"] = (Builtins.rumdl) {
+    exclude = List("CHANGELOG.md")
+  }
   ["actionlint"] = Builtins.actionlint
   ["goreleaser"] = new Step {
     glob = ".goreleaser.yaml"

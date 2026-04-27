@@ -26,6 +26,7 @@
 - [x] Add keep-screen-awake option for orcha
 - [ ] Implement Linux keep-awake support when pid can rely on a built-in inhibitor
 - [ ] Add higher-level orchestrator agent (see `ORCHESTRATOR_AGENT_PLAN.md`)
+- [x] Make prompts and forge CLI configurable
 - [x] Fix PR merge attempts counting only review rejects
 - [x] Fix thinking bump on rebase conflict-only failures
 - [x] Ensure review agent checks required tests
@@ -36,3 +37,4 @@
 - [x] Write sbx implementation/cleanup plan
 - [x] Add edge-case tests and improve coverage
 - [x] Review edge-case test coverage work
+- [x] Review configurability changes and fix gaps

@@ -1,5 +1,6 @@
 # TODO
 
+- [x] Sync docs for renamed release tasks
 - [x] Fix release workflow dirty `mise.lock`
 - [x] Configure GoReleaser cosign signing and Syft SBOMs
 - [x] Move version bump hooks into `cog.toml`

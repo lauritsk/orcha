@@ -31,6 +31,8 @@ Use `mise` tasks rather than invoking tools directly:
 | `mise run build` | Build the Python package. |
 | `mise run audit` | Audit locked dependencies. |
 | `mise run check` | Run lint, test, build, and audit. |
+| `mise run release:bump` | Bump the package version. |
+| `mise run release:publish` | Publish a tagged release. |
 
 The CLI can be run from a checkout with:
 

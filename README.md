@@ -115,7 +115,9 @@ mise run audit
 mise run check
 ```
 
-Use `mise run fix` to run hk-managed formatters and fixers.
+Use `mise run fix` to run hk-managed formatters and fixers. Release helpers are
+namespaced under `release:*`: use `mise run release:bump` to bump the package
+version and `mise run release:publish` to publish a tagged release.
 
 ### Project layout
 

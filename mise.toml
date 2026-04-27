@@ -53,10 +53,10 @@ run = "uv audit --preview-features audit --locked"
 description = "Run project checks"
 depends = ["lint", "test", "build", "audit"]
 
-[tasks.version]
+[tasks."release:bump"]
 description = "Bump project version"
 run = "cog bump --auto"
 
-[tasks.release]
+[tasks."release:publish"]
 description = "Publish release"
 run = "goreleaser release --clean"

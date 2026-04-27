@@ -32,3 +32,5 @@
 - [x] Add session logging
 - [x] Review session logging implementation
 - [x] Review attempts counting changes and tests
+- [x] Analyze Docker AI Sandboxes fit
+- [x] Write sbx implementation/cleanup plan

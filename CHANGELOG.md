@@ -2,6 +2,28 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## [v0.3.0](https://github.com/lauritsk/orcha/compare/9bf6b6ed1e2eb7999d898b6c9452ad7cc8e58628..v0.3.0) - 2026-04-27
+#### Features
+- use any agent - ([9c00a68](https://github.com/lauritsk/orcha/commit/9c00a68d1cda7ddcb96a321d704b65009f52f15b)) - Karl Hans Laurits
+- add logging - ([eda8d39](https://github.com/lauritsk/orcha/commit/eda8d39a7b3633da64025bf3479fedece32d6f57)) - Karl Hans Laurits
+- require review agents to update relevant docs - ([32f11f3](https://github.com/lauritsk/orcha/commit/32f11f32a7055827d3129dc36612d5104bb0a4a9)) - Karl Hans Laurits
+- require review agents to validate test coverage - ([d272af3](https://github.com/lauritsk/orcha/commit/d272af385fa0229396137e37a65db103a7c7102d)) - Karl Hans Laurits
+- launch interactive session - ([f112ec9](https://github.com/lauritsk/orcha/commit/f112ec95493ffe45335a483ba5cdf4539a7f951b)) - Karl Hans Laurits
+- agent commit msg - ([ea354b4](https://github.com/lauritsk/orcha/commit/ea354b4cc699e2937cade41118f7f47aef6719f5)) - Karl Hans Laurits
+- add orchestrator agent - ([6448c44](https://github.com/lauritsk/orcha/commit/6448c44c822da1629851b8475222e2a968f5a2c3)) - Karl Hans Laurits
+#### Bug Fixes
+- keep merge retries from consuming agent attempts - ([67882f1](https://github.com/lauritsk/orcha/commit/67882f1fb34724d98ca4e1429f20036273a0b310)) - Karl Hans Laurits
+- defer review-triggered thinking bump until after follow-up - ([4cc1b6d](https://github.com/lauritsk/orcha/commit/4cc1b6d57f9abea95e2d4e5948c960c8b6a6995b)) - Karl Hans Laurits
+#### Refactoring
+- generic2 - ([7ed9997](https://github.com/lauritsk/orcha/commit/7ed9997bbd7f6aae2610984f01ed3706fd840e17)) - Karl Hans Laurits
+- generic1 - ([847beb6](https://github.com/lauritsk/orcha/commit/847beb69981fdf485441d99d2695bef738ee0ec2)) - Karl Hans Laurits
+#### Miscellaneous Chores
+- update todo.md - ([fc12244](https://github.com/lauritsk/orcha/commit/fc122441295885d6e2e6d5e723c7e3c07f17c760)) - Karl Hans Laurits
+- move audit into hk checks - ([cbb0553](https://github.com/lauritsk/orcha/commit/cbb05537c1d54993edc2f376be0380712291bf2f)) - Karl Hans Laurits
+- add released version of orcha as usable package to mise - ([9bf6b6e](https://github.com/lauritsk/orcha/commit/9bf6b6ed1e2eb7999d898b6c9452ad7cc8e58628)) - Karl Hans Laurits
+
+- - -
+
 ## [v0.2.0](https://github.com/lauritsk/orcha/compare/d3d4daceef76e2f1cd4bb2d124070fc479695cc6..v0.2.0) - 2026-04-27
 #### Features
 - add plumbum-backed command runner - ([001de9f](https://github.com/lauritsk/orcha/commit/001de9f88dfba40534f2d051953de1efd0223c62)) - Karl Hans Laurits

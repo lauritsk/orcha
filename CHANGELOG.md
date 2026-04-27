@@ -2,6 +2,21 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## [v0.5.0](https://github.com/lauritsk/pid/compare/fe956edad11d52c0fd382d71435b890bb4e99413..v0.5.0) - 2026-04-27
+#### Features
+- add bounded base refresh checkpoints - ([1be2f07](https://github.com/lauritsk/pid/commit/1be2f07afd320f993d243992e9f7cc5bf62c3c85)) - Karl Hans Laurits
+- expose configurable session output visibility - ([6643e5e](https://github.com/lauritsk/pid/commit/6643e5e4c4e5bb088e13043844ede8c09b4fe05d)) - Karl Hans Laurits
+- add init, prompt, and inspection CLI support - ([8451aba](https://github.com/lauritsk/pid/commit/8451aba17c2ce974e5eb30e883fb4724fe41ee22)) - Karl Hans Laurits
+- add CLI inspection commands and interactive prompts - ([2b0dba3](https://github.com/lauritsk/pid/commit/2b0dba369ac41642db88a0709368e6b430e8cf45)) - Karl Hans Laurits
+- add interactive prompts for missing CLI arguments - ([b3dcd26](https://github.com/lauritsk/pid/commit/b3dcd2620f9ec34f3e8edf3afcffbe7250309cd2)) - Karl Hans Laurits
+#### Documentation
+- add extensibility roadmap - ([ee0cc00](https://github.com/lauritsk/pid/commit/ee0cc007da791c86f10ce63de39d5aa31ab33011)) - Karl Hans Laurits
+- add merge reliability improvement plan - ([3a0051d](https://github.com/lauritsk/pid/commit/3a0051d73fc013870c8b2234480003889e389b8f)) - Karl Hans Laurits
+#### Miscellaneous Chores
+- update pid tool here - ([fe956ed](https://github.com/lauritsk/pid/commit/fe956edad11d52c0fd382d71435b890bb4e99413)) - Karl Hans Laurits
+
+- - -
+
 ## [v0.4.0](https://github.com/lauritsk/pid/compare/c0030032a7fcf3c6a38aef18607ab1b03d1b0af0..v0.4.0) - 2026-04-27
 #### Features
 - make pid prompts and forge commands configurable - ([6fe865b](https://github.com/lauritsk/pid/commit/6fe865b75a82a1d36812f6215ed73bd2e5cfc410)) - Karl Hans Laurits

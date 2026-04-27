@@ -1,0 +1,25 @@
+amends "package://github.com/jdx/hk/releases/download/v1.44.1/hk@1.44.1#/Config.pkl"
+import "package://github.com/jdx/hk/releases/download/v1.44.1/hk@1.44.1#/Builtins.pkl"
+
+local linters = new Mapping<String, Step> {
+  ["ruff"] = Builtins.ruff
+  ["ty"] = Builtins.ty
+  ["tombi"] = Builtins.tombi
+  ["pkl"] = Builtins.pkl
+  ["pkl-format"] = Builtins.pkl_format
+}
+
+hooks {
+  ["pre-commit"] {
+    fix = true
+    stash = "git"
+    steps = linters
+  }
+  ["fix"] {
+    fix = true
+    steps = linters
+  }
+  ["check"] {
+    steps = linters
+  }
+}

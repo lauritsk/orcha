@@ -1,0 +1,23 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "helpers:pinGitHubActionDigests"
+  ],
+  "dependencyDashboard": true,
+  "semanticCommits": "enabled",
+  "semanticCommitType": "chore",
+  "semanticCommitScope": "deps",
+  "labels": [
+    "dependencies"
+  ],
+  "minimumReleaseAge": "7 days",
+  "internalChecksFilter": "strict",
+  "prCreation": "not-pending",
+  "lockFileMaintenance": {
+    "enabled": true
+  },
+  "vulnerabilityAlerts": {
+    "enabled": true
+  }
+}

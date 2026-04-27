@@ -1,0 +1,14 @@
+ignore_merge_commits = true
+tag_prefix = "v"
+branch_whitelist = ["main"]
+
+[changelog]
+path = "CHANGELOG.md"
+template = "remote"
+remote = "github.com"
+owner = "lauritsk"
+repository = "orcha"
+
+[[changelog.authors]]
+signature = "karl@laurits.dev"
+username = "lauritsk"

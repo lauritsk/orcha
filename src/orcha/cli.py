@@ -19,6 +19,7 @@ app = typer.Typer(add_completion=False, context_settings=APP_CONTEXT)
 
 @app.command(context_settings=APP_CONTEXT)
 def main(
+    ctx: typer.Context,
     args: Annotated[
         list[str] | None,
         typer.Argument(
@@ -28,4 +29,5 @@ def main(
     ] = None,
 ) -> None:
     """Run Orcha."""
-    raise typer.Exit(run_orcha(args or []))
+    raw_args = [*(args or []), *ctx.args]
+    raise typer.Exit(run_orcha(raw_args))

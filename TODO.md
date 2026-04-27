@@ -5,5 +5,6 @@
 - [x] Implement Orcha as a Python/Typer app
 - [x] Derive package version from metadata
 - [x] Tie audit task into mise check
-- [ ] Add docs when requested
+- [x] Add docs when requested
+- [x] Use Typer-native CLI handling
 - [x] Add Rich visual output to CLI

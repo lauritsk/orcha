@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import pytest
+from typer.testing import CliRunner
+
+from orcha.cli import app
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
@@ -437,6 +440,13 @@ def install_fake_commands(bin_dir: Path, commands: tuple[str, ...]) -> None:
         os.symlink(script, bin_dir / command)
 
 
+@dataclass(frozen=True)
+class CliProcess:
+    returncode: int
+    stdout: str
+    stderr: str
+
+
 def run_orcha(
     tmp_path: Path,
     args: list[str],
@@ -449,7 +459,7 @@ def run_orcha(
         "gh",
         "mise",
     ),
-) -> tuple[subprocess.CompletedProcess[str], dict[str, Any]]:
+) -> tuple[CliProcess, dict[str, Any]]:
     state = state or base_state(tmp_path)
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -473,14 +483,15 @@ def run_orcha(
             ),
         }
     )
-    process = subprocess.run(
-        [sys.executable, "-m", "orcha", *args],
-        cwd=state["repo_root"],
-        env=env,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
+    runner = CliRunner()
+    previous_cwd = os.getcwd()
+    try:
+        os.chdir(state["repo_root"])
+        result = runner.invoke(app, args, env=env)
+    finally:
+        os.chdir(previous_cwd)
+
+    process = CliProcess(result.exit_code, result.stdout, result.stderr)
     final_state = json.loads(state_path.read_text())
     return process, final_state
 
@@ -492,11 +503,11 @@ def calls(state: dict[str, Any], cmd: str, *prefix: str) -> list[dict[str, Any]]
     return [call for call in matching if call["args"][: len(prefix)] == list(prefix)]
 
 
-def combined_output(process: subprocess.CompletedProcess[str]) -> str:
+def combined_output(process: CliProcess) -> str:
     return process.stdout + process.stderr
 
 
-def assert_success(process: subprocess.CompletedProcess[str]) -> None:
+def assert_success(process: CliProcess) -> None:
     assert process.returncode == 0, combined_output(process)
 
 
@@ -864,6 +875,19 @@ def test_dirty_work_is_committed_then_pr_created_and_merged(tmp_path: Path) -> N
     assert ["push", "origin", "--delete", "feature/cool-stuff"] in [
         call["args"][-4:] for call in calls(final_state, "git", "push")
     ]
+
+
+def test_prompt_preserves_unknown_option_like_words(tmp_path: Path) -> None:
+    state = base_state(tmp_path, worktree_dirty="", worktree_diff="")
+
+    process, final_state = run_orcha(
+        tmp_path,
+        ["feature/cool-stuff", "use", "--flag", "value"],
+        state=state,
+    )
+
+    assert_success(process)
+    assert final_state["pi_calls"][0]["prompt"] == "use --flag value"
 
 
 def test_existing_commits_with_dirty_review_changes_commit_followup(

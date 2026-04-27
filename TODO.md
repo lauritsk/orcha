@@ -1,6 +1,7 @@
 # TODO
 
 - [x] Configure GoReleaser cosign signing and Syft SBOMs
+- [x] Move version bump hooks into `cog.toml`
 - [ ] Refactor `wt.fish` into a Python/uv app
   - [x] Inventory current `wt.fish` behavior
   - [x] Decide recommended CLI/TUI direction
@@ -8,4 +9,5 @@
   - [x] Set up Python package structure, uv dependencies, and mise tasks
   - [ ] Port behavior behind tests
     - [x] Add initial Typer app and smoke tests
+    - [x] Add full `wt.fish` functional coverage
   - [ ] Add docs and migration wrapper

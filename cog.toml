@@ -1,6 +1,13 @@
 ignore_merge_commits = true
 tag_prefix = "v"
 branch_whitelist = ["main"]
+pre_bump_hooks = [
+  "uv version {{version}} --no-sync",
+  "mise run check",
+]
+post_bump_hooks = [
+  "git push --atomic origin HEAD {{version_tag}}",
+]
 
 [changelog]
 path = "CHANGELOG.md"

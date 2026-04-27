@@ -2,6 +2,7 @@
 HK_MISE = 1
 
 [tools]
+"aqua:fish-shell/fish-shell" = "4.6.0"
 cocogitto = "7.0.0"
 cosign = "3.0.6"
 goreleaser = "2.15.4"
@@ -46,7 +47,7 @@ description = "Run project checks"
 depends = ["lint", "test", "build"]
 
 [tasks.version]
-run = "cog bump --auto && git push && git push --tags"
+run = "cog bump --auto"
 
 [tasks.release]
 run = "goreleaser release --clean"

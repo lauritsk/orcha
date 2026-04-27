@@ -51,7 +51,8 @@ Install from a local checkout:
 uv tool install .
 ```
 
-For development, use `mise` from the repository root:
+For development, use `mise` from the repository root. `mise run test` runs
+pytest with the repository coverage gate:
 
 ```sh
 mise trust
@@ -224,7 +225,8 @@ pid reads these optional environment variables:
 
 ## Development
 
-This repository uses `mise` for tools and tasks.
+This repository uses `mise` for tools and tasks. The test task runs pytest with
+coverage reporting and fails below 95% total coverage.
 
 ```sh
 mise trust

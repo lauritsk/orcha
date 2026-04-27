@@ -26,6 +26,7 @@ cleans up the worktree.
 - Handles CI failure follow-ups and moved-base rebase retries without charging
   agent attempts.
 - Uses Rich output for key status panels.
+- Optionally keeps the screen awake while pid runs on macOS.
 
 ## Requirements
 
@@ -128,8 +129,8 @@ Default config paths:
 Relative `XDG_CONFIG_HOME` values are ignored as required by the XDG Base
 Directory Specification.
 
-Only the agent command and launch behavior are configurable. Defaults are
-equivalent to:
+The agent command, launch behavior, and selected runtime behavior are
+configurable. Defaults are equivalent to:
 
 ```toml
 [agent]
@@ -140,6 +141,9 @@ default_thinking = "medium"
 review_thinking = "high"
 thinking_levels = ["low", "medium", "high", "xhigh"]
 label = "agent"
+
+[runtime]
+keep_screen_awake = false
 ```
 
 `command` may be an array of strings or a shell-style string.
@@ -149,6 +153,11 @@ may include `{thinking}`. `interactive_args` may include `{prompt}` and
 session prompt as a trailing argument. Those are the only supported template
 fields. pid never assumes a specific agent CLI internally; it only expands
 these templates.
+
+Set `runtime.keep_screen_awake = true` to keep the display awake while pid is
+running. This is currently implemented on macOS with the built-in `caffeinate`
+tool (`caffeinate -d -i`). Linux support is intentionally not enabled yet
+because pid does not assume a universal built-in Linux inhibitor.
 
 Example `pi` config:
 

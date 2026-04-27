@@ -61,10 +61,18 @@ class AgentConfig:
 
 
 @dataclass(frozen=True)
+class RuntimeConfig:
+    """Configured pid runtime behavior."""
+
+    keep_screen_awake: bool = False
+
+
+@dataclass(frozen=True)
 class PIDConfig:
     """Top-level pid config."""
 
     agent: AgentConfig = field(default_factory=AgentConfig)
+    runtime: RuntimeConfig = field(default_factory=RuntimeConfig)
 
 
 def default_config_path() -> Path:
@@ -110,13 +118,21 @@ def load_config(path: Path | None = None) -> PIDConfig:
 
 
 def parse_config(data: dict[str, Any], path: Path) -> PIDConfig:
-    unknown_top = set(data) - {"agent"}
+    unknown_top = set(data) - {"agent", "runtime"}
     if unknown_top:
         fail_config(path, f"unknown top-level key: {sorted(unknown_top)[0]}")
 
     agent_data = data.get("agent", {})
     if not isinstance(agent_data, dict):
         fail_config(path, "[agent] must be a table")
+
+    runtime_data = data.get("runtime", {})
+    if not isinstance(runtime_data, dict):
+        fail_config(path, "[runtime] must be a table")
+    allowed_runtime = {"keep_screen_awake"}
+    unknown_runtime = set(runtime_data) - allowed_runtime
+    if unknown_runtime:
+        fail_config(path, f"unknown [runtime] key: {sorted(unknown_runtime)[0]}")
 
     allowed_agent = {
         "command",
@@ -164,6 +180,11 @@ def parse_config(data: dict[str, Any], path: Path) -> PIDConfig:
         "agent.review_thinking",
     )
     label = string_value(agent_data.get("label", default.label), path, "agent.label")
+    keep_screen_awake = bool_value(
+        runtime_data.get("keep_screen_awake", False),
+        path,
+        "runtime.keep_screen_awake",
+    )
 
     if not command:
         fail_config(path, "agent.command must not be empty")
@@ -199,8 +220,15 @@ def parse_config(data: dict[str, Any], path: Path) -> PIDConfig:
             review_thinking=review_thinking,
             thinking_levels=thinking_levels,
             label=label,
-        )
+        ),
+        runtime=RuntimeConfig(keep_screen_awake=keep_screen_awake),
     )
+
+
+def bool_value(value: Any, path: Path, key: str) -> bool:
+    if not isinstance(value, bool):
+        fail_config(path, f"{key} must be a boolean")
+    return value
 
 
 def string_value(value: Any, path: Path, key: str) -> str:

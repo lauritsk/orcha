@@ -12,9 +12,9 @@ pkl = "0.31.1"
 ruff = "0.15.12"
 rumdl = "0.1.83"
 syft = "1.43.0"
-tombi = "0.9.24"
+tombi = "0.9.25"
 ty = "0.0.32"
-uv = "0.11.7"
+uv = "0.11.8"
 
 [hooks]
 postinstall = "hk install --mise"

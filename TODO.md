@@ -18,7 +18,9 @@
 - [x] Add plumbum command execution dependency
 - [x] Add docs update enforcement to review agent
 - [ ] Add higher-level orchestrator agent (see `ORCHESTRATOR_AGENT_PLAN.md`)
+- [x] Fix PR merge attempts counting only review rejects
 - [x] Fix thinking bump on rebase conflict-only failures
 - [x] Ensure review agent checks required tests
 - [x] Add session logging
 - [x] Review session logging implementation
+- [x] Review attempts counting changes and tests

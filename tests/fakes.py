@@ -548,6 +548,7 @@ def run_orcha(
                 state.get("checks_poll_interval_seconds", 0)
             ),
             "ORCHA_LOG_DIR": str(tmp_path / "logs"),
+            "ORCHA_MERGE_RETRY_LIMIT": str(state.get("merge_retry_limit", 20)),
         }
     )
     runner = CliRunner()

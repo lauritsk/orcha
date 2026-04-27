@@ -758,6 +758,32 @@ def test_rebase_conflict_invokes_pi_resolution(tmp_path: Path) -> None:
     assert "fix: resolve latest base changes" in final_state["commit_messages"]
 
 
+def test_rebase_conflict_retry_does_not_consume_agent_attempt(
+    tmp_path: Path,
+) -> None:
+    state = base_state(
+        tmp_path,
+        merge_sequence=[
+            {"status": 1, "err": "conflict"},
+            {"status": 0, "out": "merged"},
+        ],
+        rebase_conflict_once=True,
+        dirty_after_rebase_fix=" M resolved\n",
+    )
+
+    process, final_state = run_orcha(
+        tmp_path, ["1", "feature/cool-stuff", "prompt"], state=state
+    )
+
+    assert_success(process)
+    rebase_calls = [
+        call for call in final_state["pi_calls"] if call["kind"] == "rebase_fix"
+    ]
+    assert final_state["merge_index"] == 2
+    assert len(rebase_calls) == 1
+    assert "agent attempts unchanged" in process.stdout
+
+
 def test_rebase_conflict_after_review_changes_does_not_bump_thinking(
     tmp_path: Path,
 ) -> None:
@@ -837,13 +863,35 @@ def test_merge_success_without_merged_at_leaves_pr_for_queue(tmp_path: Path) -> 
     assert "likely queued or auto-merge enabled" in process.stdout
 
 
-def test_merge_failure_after_last_attempt_leaves_pr_open(tmp_path: Path) -> None:
-    state = base_state(tmp_path, merge_sequence=[{"status": 9, "err": "merge blocked"}])
+def test_merge_retry_does_not_consume_agent_attempt(tmp_path: Path) -> None:
+    state = base_state(
+        tmp_path,
+        merge_sequence=[
+            {"status": 9, "err": "base branch moved"},
+            {"status": 0, "out": "merged"},
+        ],
+    )
+
+    process, final_state = run_orcha(
+        tmp_path, ["1", "feature/cool-stuff", "prompt"], state=state
+    )
+
+    assert_success(process)
+    assert final_state["merge_index"] == 2
+    assert "agent attempts unchanged" in process.stdout
+
+
+def test_merge_failure_after_retry_limit_leaves_pr_open(tmp_path: Path) -> None:
+    state = base_state(
+        tmp_path,
+        merge_sequence=[{"status": 9, "err": "merge blocked"}],
+        merge_retry_limit=1,
+    )
 
     process, _ = run_orcha(tmp_path, ["1", "feature/cool-stuff", "prompt"], state=state)
 
     assert process.returncode == 9
-    assert "github squash merge failed after 1 attempts" in process.stderr
+    assert "github squash merge failed after 1 merge retries" in process.stderr
 
 
 def test_cleanup_worktree_remove_failure_is_reported(tmp_path: Path) -> None:

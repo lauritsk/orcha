@@ -14,3 +14,4 @@
 - [x] Add Rich visual output to CLI
 - [x] Refactor Python project structure
 - [x] Add plumbum command execution dependency
+- [ ] Add higher-level orchestrator agent (see `ORCHESTRATOR_AGENT_PLAN.md`)

@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for improving Orcha. This project uses `mise` for tooling and task
+Thanks for improving pid. This project uses `mise` for tooling and task
 orchestration.
 
 ## Setup
@@ -36,7 +36,7 @@ Use `mise` tasks rather than invoking tools directly:
 The CLI can be run from a checkout with:
 
 ```sh
-mise run orcha -- [ATTEMPTS] [THINKING] BRANCH PROMPT...
+mise run pid -- [ATTEMPTS] [THINKING] BRANCH PROMPT...
 ```
 
 ## Code standards
@@ -60,7 +60,7 @@ mise run orcha -- [ATTEMPTS] [THINKING] BRANCH PROMPT...
 
 When filing bugs, include:
 
-- Orcha version or commit SHA.
+- pid version or commit SHA.
 - Operating system and shell.
 - Command you ran.
 - Expected behavior.

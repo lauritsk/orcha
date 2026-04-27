@@ -1,4 +1,4 @@
-"""Orcha worktree automation flow."""
+"""pid worktree automation flow."""
 
 from __future__ import annotations
 
@@ -6,13 +6,13 @@ import shutil
 import sys
 from pathlib import Path
 
-from orcha.commands import CommandRunner, require_command
-from orcha.config import OrchaConfig
-from orcha.errors import OrchaAbort, abort
-from orcha.github import GitHub
-from orcha.messages import parse_commit_message
-from orcha.models import CommitMessage, ParsedArgs
-from orcha.output import (
+from pid.commands import CommandRunner, require_command
+from pid.config import PIDConfig
+from pid.errors import PIDAbort, abort
+from pid.github import GitHub
+from pid.messages import parse_commit_message
+from pid.models import CommitMessage, ParsedArgs
+from pid.output import (
     echo_err,
     echo_out,
     print_commit_message,
@@ -21,26 +21,26 @@ from orcha.output import (
     write_collected,
     write_command_output,
 )
-from orcha.parsing import bump_thinking, parse_args
-from orcha.prompts import (
+from pid.parsing import bump_thinking, parse_args
+from pid.prompts import (
     build_ci_fix_prompt,
     build_message_prompt,
     build_rebase_fix_prompt,
     build_review_prompt,
 )
-from orcha.repository import Repository, validate_branch_name
-from orcha.session_logging import SessionLogger
-from orcha.utils import env_int, has_output, review_target_for, worktree_path_for
+from pid.repository import Repository, validate_branch_name
+from pid.session_logging import SessionLogger
+from pid.utils import env_int, has_output, review_target_for, worktree_path_for
 
 
-class OrchaFlow:
-    """Implements the Orcha orchestration lifecycle."""
+class PIDFlow:
+    """Implements the pid orchestration lifecycle."""
 
     def __init__(
-        self, runner: CommandRunner | None = None, config: OrchaConfig | None = None
+        self, runner: CommandRunner | None = None, config: PIDConfig | None = None
     ) -> None:
         self.runner = runner or CommandRunner()
-        self.config = config or OrchaConfig()
+        self.config = config or PIDConfig()
         self.repository = Repository(self.runner)
         self.github = GitHub(self.runner)
         self.review_rejected_first_pass = False
@@ -50,7 +50,7 @@ class OrchaFlow:
         exit_code = 0
         try:
             self._run(argv)
-        except OrchaAbort as error:
+        except PIDAbort as error:
             exit_code = error.code
         except Exception as error:
             exit_code = 1
@@ -90,7 +90,7 @@ class OrchaFlow:
         )
         if has_output(main_dirty):
             echo_err(
-                f"orcha: main worktree has uncommitted or untracked changes: {main_worktree}"
+                f"pid: main worktree has uncommitted or untracked changes: {main_worktree}"
             )
             abort(1)
 
@@ -152,7 +152,7 @@ class OrchaFlow:
         if pre_review_state_hash != post_review_state_hash:
             self.review_rejected_first_pass = True
             echo_out(
-                "orcha: review changed first pass; follow-up "
+                "pid: review changed first pass; follow-up "
                 f"{self.config.agent.label} will keep thinking {followup_thinking_level}"
             )
 
@@ -163,7 +163,7 @@ class OrchaFlow:
             ["status", "--porcelain", "--untracked-files=all"], cwd=worktree_path
         )
         if post_review_commit_count == 0 and not has_output(post_review_dirty):
-            echo_out("orcha: no changes or commits after agent; stopping before PR")
+            echo_out("pid: no changes or commits after agent; stopping before PR")
             abort(0)
 
         commit_message = self.generate_commit_message(
@@ -195,12 +195,12 @@ class OrchaFlow:
         try:
             self.session_logger = SessionLogger.create(argv)
         except OSError as error:
-            echo_err(f"orcha: session logging disabled: {error}")
+            echo_err(f"pid: session logging disabled: {error}")
             return
 
         set_session_logger(self.session_logger)
         self.runner.set_logger(self.session_logger)
-        echo_out(f"orcha: session log: {self.session_logger.path}")
+        echo_out(f"pid: session log: {self.session_logger.path}")
 
     def log_parsed_args(self, parsed: ParsedArgs) -> None:
         """Record parsed CLI args in the session log."""
@@ -222,7 +222,7 @@ class OrchaFlow:
         git_dir = self.repository.output(
             ["rev-parse", "--path-format=absolute", "--git-dir"], cwd=worktree_path
         ).strip()
-        output_path = Path(git_dir, "orcha-message.json")
+        output_path = Path(git_dir, "pid-message.json")
         output_path.unlink(missing_ok=True)
         pre_message_state_hash = self.repository.state_hash(worktree_path)
 
@@ -242,11 +242,11 @@ class OrchaFlow:
         post_message_state_hash = self.repository.state_hash(worktree_path)
         if pre_message_state_hash != post_message_state_hash:
             echo_err(
-                "orcha: agent message changed the worktree; stopping before commit/PR"
+                "pid: agent message changed the worktree; stopping before commit/PR"
             )
             abort(1)
         if not output_path.exists():
-            echo_err("orcha: agent message did not write commit metadata")
+            echo_err("pid: agent message did not write commit metadata")
             abort(1)
 
         return parse_commit_message(output_path.read_text(encoding="utf-8"))
@@ -254,12 +254,12 @@ class OrchaFlow:
     def require_external_commands(self) -> None:
         """Ensure external CLIs needed for the orchestration flow exist."""
 
-        require_command("cog", "orcha: cog is required for commit message verification")
+        require_command("cog", "pid: cog is required for commit message verification")
         require_command(
             self.config.agent.executable,
-            f"orcha: agent command is required: {self.config.agent.executable}",
+            f"pid: agent command is required: {self.config.agent.executable}",
         )
-        require_command("gh", "orcha: gh is required for PR creation")
+        require_command("gh", "pid: gh is required for PR creation")
 
     def run_pr_loop(
         self,
@@ -276,9 +276,9 @@ class OrchaFlow:
         need_force_push = False
         pr_url = ""
         message_state_hash = self.repository.state_hash(worktree_path)
-        checks_timeout_seconds = env_int("ORCHA_CHECKS_TIMEOUT_SECONDS", 1800)
-        checks_poll_interval_seconds = env_int("ORCHA_CHECKS_POLL_INTERVAL_SECONDS", 10)
-        merge_retry_limit = env_int("ORCHA_MERGE_RETRY_LIMIT", 20)
+        checks_timeout_seconds = env_int("PID_CHECKS_TIMEOUT_SECONDS", 1800)
+        checks_poll_interval_seconds = env_int("PID_CHECKS_POLL_INTERVAL_SECONDS", 10)
+        merge_retry_limit = env_int("PID_MERGE_RETRY_LIMIT", 20)
         merge_retries = 0
         attempt = 1
 
@@ -287,7 +287,7 @@ class OrchaFlow:
                 self.session_logger.separator(
                     f"PR ATTEMPT {attempt}/{parsed.max_attempts}"
                 )
-            echo_out(f"orcha: PR attempt {attempt}/{parsed.max_attempts}")
+            echo_out(f"pid: PR attempt {attempt}/{parsed.max_attempts}")
             commit_title = self.repository.commit_dirty_automated_feedback(
                 worktree_path, commit_title
             )
@@ -333,10 +333,10 @@ class OrchaFlow:
                 write_collected(checks_out, stream=sys.stdout)
             if checks_status != 0:
                 if "no checks" in checks_out.lower():
-                    echo_out("orcha: no CI checks reported; continuing")
+                    echo_out("pid: no CI checks reported; continuing")
                 elif attempt >= parsed.max_attempts:
                     echo_err(
-                        f"orcha: CI checks failed after {attempt} attempts; "
+                        f"pid: CI checks failed after {attempt} attempts; "
                         f"leaving PR open: {pr_url}"
                     )
                     abort(checks_status)
@@ -376,7 +376,7 @@ class OrchaFlow:
 
             if self.github.reports_merged(pr_url, worktree_path):
                 echo_out(
-                    "orcha: GitHub reports PR merged despite local gh cleanup failure; "
+                    "pid: GitHub reports PR merged despite local gh cleanup failure; "
                     "cleaning up"
                 )
                 self.cleanup_and_print_success(
@@ -392,13 +392,13 @@ class OrchaFlow:
             merge_retries += 1
             if merge_retries > merge_retry_limit:
                 echo_err(
-                    "orcha: github squash merge failed after "
+                    "pid: github squash merge failed after "
                     f"{merge_retry_limit} merge retries; leaving PR open: {pr_url}"
                 )
                 abort(merge_result.returncode)
 
             echo_out(
-                "orcha: merge failed; rebasing onto latest "
+                "pid: merge failed; rebasing onto latest "
                 f"origin/{default_branch} before retry "
                 f"({merge_retries}/{merge_retry_limit} merge retries; "
                 "agent attempts unchanged)"
@@ -424,7 +424,7 @@ class OrchaFlow:
 
             if self.repository.rebase_in_progress(worktree_path):
                 echo_err(
-                    "orcha: rebase still in progress after agent; "
+                    "pid: rebase still in progress after agent; "
                     f"leaving PR open: {pr_url}"
                 )
                 abort(1)
@@ -435,7 +435,7 @@ class OrchaFlow:
             need_force_push = True
 
         echo_err(
-            f"orcha: exhausted {parsed.max_attempts} attempts; leaving worktree: {worktree_path}"
+            f"pid: exhausted {parsed.max_attempts} attempts; leaving worktree: {worktree_path}"
         )
         abort(1)
 
@@ -494,11 +494,11 @@ class OrchaFlow:
         return followup_thinking_level
 
     def resolve_repo_root(self) -> str:
-        """Return the current git repository root or abort with Orcha's message."""
+        """Return the current git repository root or abort with pid's message."""
 
         return self.require_git_output(
             ["rev-parse", "--show-toplevel"],
-            error_message="orcha: not inside a git repository",
+            error_message="pid: not inside a git repository",
         )
 
     def resolve_main_worktree(self) -> str:
@@ -506,7 +506,7 @@ class OrchaFlow:
 
         common_git_dir = self.require_git_output(
             ["rev-parse", "--path-format=absolute", "--git-common-dir"],
-            error_message="orcha: could not determine common git dir",
+            error_message="pid: could not determine common git dir",
         )
         return str(Path(common_git_dir).parent)
 
@@ -538,7 +538,7 @@ class OrchaFlow:
         cwd: str,
         thinking_level: str,
     ) -> None:
-        """Run the configured agent interactively, then return to Orcha."""
+        """Run the configured agent interactively, then return to pid."""
 
         agent_args = self.config.agent.interactive_command(
             prompt=prompt, thinking=thinking_level
@@ -552,21 +552,21 @@ class OrchaFlow:
             )
 
         echo_out(
-            "orcha: launching interactive agent session; "
+            "pid: launching interactive agent session; "
             "exit agent to resume review/PR flow"
         )
         agent_result = self.runner.run_interactive(agent_args, cwd=cwd)
         if agent_result.returncode == 0:
             if self.session_logger is not None:
                 self.session_logger.step_pass(log_step)
-            echo_out("orcha: interactive agent session exited; resuming review/PR flow")
+            echo_out("pid: interactive agent session exited; resuming review/PR flow")
             return
 
         if self.session_logger is not None:
             self.session_logger.step_fail(log_step, agent_result.returncode)
         write_command_output(agent_result)
         echo_err(
-            f"orcha: {self.config.agent.label} exited with status "
+            f"pid: {self.config.agent.label} exited with status "
             f"{agent_result.returncode}; stopping before review/commit/PR"
         )
         abort(agent_result.returncode)
@@ -606,7 +606,7 @@ class OrchaFlow:
         write_command_output(agent_result)
         separator = " " if failure_context.startswith("while ") else "; "
         echo_err(
-            f"orcha: {display_label} exited with status "
+            f"pid: {display_label} exited with status "
             f"{agent_result.returncode}{separator}{failure_context}"
         )
         abort(agent_result.returncode)
@@ -619,7 +619,7 @@ class OrchaFlow:
         )
         if bumped_level != followup_thinking_level:
             echo_out(
-                "orcha: review-rejected follow-up completed; next "
+                "pid: review-rejected follow-up completed; next "
                 f"{self.config.agent.label} thinking bumped to {bumped_level}"
             )
         return bumped_level
@@ -637,13 +637,13 @@ class OrchaFlow:
         merged_at_result = self.github.merged_at(pr_url, worktree_path)
         if merged_at_result.returncode != 0:
             echo_err(
-                "orcha: merge command succeeded, but merged state could not be "
+                "pid: merge command succeeded, but merged state could not be "
                 f"confirmed; leaving PR/worktree for manual cleanup: {pr_url}"
             )
             abort(1)
         if not merged_at_result.stdout.strip():
             echo_out(
-                "orcha: merge command succeeded, but PR is not merged yet; likely "
+                "pid: merge command succeeded, but PR is not merged yet; likely "
                 f"queued or auto-merge enabled. Leaving PR/worktree: {pr_url}"
             )
             return
@@ -680,7 +680,7 @@ class OrchaFlow:
         print_merge_success(pr_title, pr_url)
 
 
-def run_orcha(argv: list[str], *, config: OrchaConfig | None = None) -> int:
-    """Run the orcha flow and return a process exit code."""
+def run_pid(argv: list[str], *, config: PIDConfig | None = None) -> int:
+    """Run the pid flow and return a process exit code."""
 
-    return OrchaFlow(config=config).run(argv)
+    return PIDFlow(config=config).run(argv)

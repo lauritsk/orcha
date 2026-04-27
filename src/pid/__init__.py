@@ -1,8 +1,8 @@
-"""Orcha package."""
+"""pid package."""
 
 from importlib.metadata import PackageNotFoundError, version
 
 try:
-    __version__ = version("orcha")
+    __version__ = version("pid")
 except PackageNotFoundError:
     __version__ = "0.0.0"

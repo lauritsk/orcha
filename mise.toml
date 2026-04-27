@@ -5,7 +5,6 @@ HK_MISE = 1
 actionlint = "1.7.12"
 cocogitto = "7.0.0"
 cosign = "3.0.6"
-"github:lauritsk/orcha" = "0.2.0"
 goreleaser = "2.15.4"
 hk = "1.44.2"
 pkl = "0.31.1"
@@ -19,9 +18,9 @@ uv = "0.11.7"
 [hooks]
 postinstall = "hk install --mise"
 
-[tasks.orcha]
-description = "Run orcha with uv"
-run = "uv run orcha"
+[tasks.pid]
+description = "Run pid with uv"
+run = "uv run pid"
 
 [tasks.install]
 description = "Install project dependencies"

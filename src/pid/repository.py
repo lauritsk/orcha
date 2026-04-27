@@ -1,4 +1,4 @@
-"""Git repository and worktree operations for Orcha."""
+"""Git repository and worktree operations for pid."""
 
 from __future__ import annotations
 
@@ -6,15 +6,15 @@ import hashlib
 import re
 from pathlib import Path
 
-from orcha.commands import CommandRunner
-from orcha.errors import abort
-from orcha.models import CommitMessage
-from orcha.output import echo_err, echo_out, write_command_output
-from orcha.utils import has_output
+from pid.commands import CommandRunner
+from pid.errors import abort
+from pid.models import CommitMessage
+from pid.output import echo_err, echo_out, write_command_output
+from pid.utils import has_output
 
 
 class Repository:
-    """Git-backed repository operations used by the Orcha workflow."""
+    """Git-backed repository operations used by the pid workflow."""
 
     def __init__(self, runner: CommandRunner) -> None:
         self.runner = runner
@@ -61,7 +61,7 @@ class Repository:
             ).stdout.strip()
 
         if not default_branch:
-            echo_err("orcha: could not determine default branch")
+            echo_err("pid: could not determine default branch")
             abort(1)
         return default_branch
 
@@ -84,7 +84,7 @@ class Repository:
                 ]
             )
         else:
-            echo_err(f"orcha: default branch not found locally: {default_branch}")
+            echo_err(f"pid: default branch not found locally: {default_branch}")
             abort(1)
 
         self.runner.require(
@@ -105,13 +105,13 @@ class Repository:
         """Abort if the branch or sibling worktree path already exists."""
 
         if self.show_ref(main_worktree, f"refs/heads/{branch}"):
-            echo_err(f"orcha: branch already exists: {branch}")
+            echo_err(f"pid: branch already exists: {branch}")
             abort(1)
         if self.show_ref(main_worktree, f"refs/remotes/origin/{branch}"):
-            echo_err(f"orcha: remote branch already exists: origin/{branch}")
+            echo_err(f"pid: remote branch already exists: origin/{branch}")
             abort(1)
         if Path(worktree_path).exists():
-            echo_err(f"orcha: path already exists: {worktree_path}")
+            echo_err(f"pid: path already exists: {worktree_path}")
             abort(1)
 
     def create_worktree(
@@ -151,7 +151,7 @@ class Repository:
             return
 
         write_command_output(config_result)
-        echo_err(f"orcha: failed to configure worktree; cleaning up {worktree_path}")
+        echo_err(f"pid: failed to configure worktree; cleaning up {worktree_path}")
         self.runner.run(
             ["git", "-C", main_worktree, "worktree", "remove", "--force", worktree_path]
         )
@@ -196,7 +196,7 @@ class Repository:
         )
 
         if commit_count == 0 and not has_output(dirty):
-            echo_out("orcha: no changes or commits after agent; stopping before PR")
+            echo_out("pid: no changes or commits after agent; stopping before PR")
             abort(0)
 
         if commit_count > 0:
@@ -220,7 +220,7 @@ class Repository:
         )
         if has_output(dirty):
             echo_err(
-                "orcha: worktree still has uncommitted changes after commit; "
+                "pid: worktree still has uncommitted changes after commit; "
                 "stopping before PR"
             )
             abort(1)
@@ -276,5 +276,5 @@ def validate_branch_name(runner: CommandRunner, branch: str) -> None:
 
     result = runner.run(["git", "check-ref-format", "--branch", branch])
     if result.returncode != 0:
-        echo_err(f"orcha: invalid branch name: {branch}")
+        echo_err(f"pid: invalid branch name: {branch}")
         abort(1)

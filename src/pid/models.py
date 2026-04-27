@@ -1,4 +1,4 @@
-"""Shared data models for Orcha."""
+"""Shared data models for pid."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ class CommandResult:
 
 @dataclass(frozen=True)
 class ParsedArgs:
-    """Parsed Orcha positional arguments."""
+    """Parsed pid positional arguments."""
 
     max_attempts: int
     thinking_level: str

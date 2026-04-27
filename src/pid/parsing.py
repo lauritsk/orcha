@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import re
 
-from orcha.config import DEFAULT_THINKING_LEVELS
-from orcha.errors import abort
-from orcha.models import ParsedArgs
-from orcha.output import echo_err, echo_out
+from pid.config import DEFAULT_THINKING_LEVELS
+from pid.errors import abort
+from pid.models import ParsedArgs
+from pid.output import echo_err, echo_out
 
-USAGE = "usage: orcha [session] [ATTEMPTS] [THINKING] BRANCH [PROMPT...]"
-SESSION_USAGE = "usage: orcha session [ATTEMPTS] [THINKING] BRANCH [PROMPT...]"
+USAGE = "usage: pid [session] [ATTEMPTS] [THINKING] BRANCH [PROMPT...]"
+SESSION_USAGE = "usage: pid session [ATTEMPTS] [THINKING] BRANCH [PROMPT...]"
 THINKING_LEVELS = DEFAULT_THINKING_LEVELS
 
 
@@ -20,7 +20,7 @@ def parse_args(
     default_thinking: str = "medium",
     thinking_levels: tuple[str, ...] = THINKING_LEVELS,
 ) -> ParsedArgs:
-    """Parse Orcha's fish-compatible positional argument format."""
+    """Parse pid's fish-compatible positional argument format."""
 
     if not argv or argv[0] in {"--help", "-h"}:
         echo_out(USAGE)
@@ -41,7 +41,7 @@ def parse_args(
     if re.fullmatch(r"[0-9]+", args[0]):
         attempts = args.pop(0)
         if re.fullmatch(r"[1-9][0-9]*", attempts) is None:
-            echo_err("orcha: ATTEMPTS must be a positive integer")
+            echo_err("pid: ATTEMPTS must be a positive integer")
             echo_err(usage)
             abort(2)
         max_attempts = int(attempts)
@@ -51,19 +51,19 @@ def parse_args(
         thinking_level = args.pop(0)
 
     if not args:
-        echo_err("orcha: branch required")
+        echo_err("pid: branch required")
         echo_err(usage)
         abort(2)
 
     branch = args.pop(0)
     prompt = " ".join(args)
     if not branch:
-        echo_err("orcha: branch must be non-empty")
+        echo_err("pid: branch must be non-empty")
         echo_err(usage)
         abort(2)
     interactive_prompt = prompt if interactive and prompt else None
     if not prompt and not interactive:
-        echo_err("orcha: prompt required for non-interactive agent flow")
+        echo_err("pid: prompt required for non-interactive agent flow")
         echo_err(usage)
         abort(2)
     if not prompt:

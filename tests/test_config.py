@@ -2,9 +2,9 @@ from pathlib import Path
 
 import pytest
 
-import orcha.config as config_module
-from orcha.config import default_config_path, load_config, parse_config
-from orcha.errors import OrchaAbort
+import pid.config as config_module
+from pid.config import default_config_path, load_config, parse_config
+from pid.errors import PIDAbort
 
 
 def test_default_config_path_uses_absolute_xdg_config_home(
@@ -13,7 +13,7 @@ def test_default_config_path_uses_absolute_xdg_config_home(
     xdg_config_home = tmp_path / "xdg"
     monkeypatch.setenv("XDG_CONFIG_HOME", str(xdg_config_home))
 
-    assert default_config_path() == xdg_config_home / "orcha" / "config.toml"
+    assert default_config_path() == xdg_config_home / "pid" / "config.toml"
 
 
 def test_default_config_path_ignores_relative_xdg_config_home(
@@ -24,7 +24,7 @@ def test_default_config_path_ignores_relative_xdg_config_home(
     monkeypatch.setenv("XDG_CONFIG_HOME", "relative")
     monkeypatch.setattr(config_module.sys, "platform", "linux")
 
-    assert default_config_path() == home / ".config" / "orcha" / "config.toml"
+    assert default_config_path() == home / ".config" / "pid" / "config.toml"
 
 
 def test_default_config_path_uses_macos_application_support(
@@ -37,12 +37,12 @@ def test_default_config_path_uses_macos_application_support(
 
     assert (
         default_config_path()
-        == home / "Library" / "Application Support" / "orcha" / "config.toml"
+        == home / "Library" / "Application Support" / "pid" / "config.toml"
     )
 
 
 def test_explicit_missing_config_path_is_an_error(tmp_path: Path) -> None:
-    with pytest.raises(OrchaAbort) as exc_info:
+    with pytest.raises(PIDAbort) as exc_info:
         load_config(tmp_path / "missing.toml")
 
     assert exc_info.value.code == 2
@@ -53,7 +53,7 @@ def test_default_missing_config_path_uses_defaults(
 ) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "missing-config-home"))
 
-    assert load_config() == config_module.OrchaConfig()
+    assert load_config() == config_module.PIDConfig()
 
 
 def test_agent_command_accepts_shell_style_string(tmp_path: Path) -> None:
@@ -109,7 +109,7 @@ def test_invalid_agent_config_is_rejected(
     agent_data: dict[str, object],
     message: str,
 ) -> None:
-    with pytest.raises(OrchaAbort) as exc_info:
+    with pytest.raises(PIDAbort) as exc_info:
         parse_config({"agent": agent_data}, tmp_path / "config.toml")
 
     assert exc_info.value.code == 2

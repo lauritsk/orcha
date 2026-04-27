@@ -1,1 +1,1 @@
-"""Test package for Orcha."""
+"""Test package for pid."""

@@ -10,26 +10,26 @@ from tests.fakes import (
     base_state,
     calls,
     combined_output,
-    run_orcha,
+    run_pid,
 )
 
 
 def test_no_args_prints_short_usage(tmp_path: Path) -> None:
-    process, _ = run_orcha(tmp_path, [], commands=())
+    process, _ = run_pid(tmp_path, [], commands=())
 
     assert_success(process)
     assert (
         process.stdout
-        == "usage: orcha [session] [ATTEMPTS] [THINKING] BRANCH [PROMPT...]\n"
+        == "usage: pid [session] [ATTEMPTS] [THINKING] BRANCH [PROMPT...]\n"
     )
 
 
 @pytest.mark.parametrize("args", [["--help"], ["-h"]])
 def test_help_uses_typer_output(tmp_path: Path, args: list[str]) -> None:
-    process, _ = run_orcha(tmp_path, args, commands=())
+    process, _ = run_pid(tmp_path, args, commands=())
 
     assert_success(process)
-    assert "Run Orcha." in process.stdout
+    assert "Run pid." in process.stdout
     assert "[session] [ATTEMPTS] [THINKING] BRANCH" in process.stdout
 
 
@@ -46,12 +46,12 @@ def test_help_uses_typer_output(tmp_path: Path, args: list[str]) -> None:
 def test_argument_validation_errors(
     tmp_path: Path, args: list[str], message: str
 ) -> None:
-    process, _ = run_orcha(tmp_path, args, commands=())
+    process, _ = run_pid(tmp_path, args, commands=())
 
     assert process.returncode == 2
     assert message in process.stderr
     assert (
-        "usage: orcha [session] [ATTEMPTS] [THINKING] BRANCH [PROMPT...]"
+        "usage: pid [session] [ATTEMPTS] [THINKING] BRANCH [PROMPT...]"
         in process.stderr
     )
 
@@ -59,12 +59,12 @@ def test_argument_validation_errors(
 def test_invalid_branch_name_stops_before_repo_setup(tmp_path: Path) -> None:
     state = base_state(tmp_path, branch="bad branch", invalid_branches=["bad branch"])
 
-    process, final_state = run_orcha(
+    process, final_state = run_pid(
         tmp_path, ["bad branch", "prompt"], state=state, commands=("git",)
     )
 
     assert process.returncode == 1
-    assert "orcha: invalid branch name: bad branch" in process.stderr
+    assert "pid: invalid branch name: bad branch" in process.stderr
     assert calls(final_state, "git", "check-ref-format")
     assert not calls(final_state, "git", "rev-parse", "--show-toplevel")
 
@@ -76,7 +76,7 @@ def test_generated_commit_title_is_validated_with_cog(tmp_path: Path) -> None:
         generated_commit_title="docs: explain setup flow",
     )
 
-    process, final_state = run_orcha(
+    process, final_state = run_pid(
         tmp_path,
         ["work/rough-name", "prompt"],
         state=state,
@@ -106,7 +106,7 @@ def test_preflight_dependency_failures(
 ) -> None:
     state = base_state(tmp_path, **overrides)
 
-    process, _ = run_orcha(
+    process, _ = run_pid(
         tmp_path, ["feature/cool-stuff", "prompt"], state=state, commands=commands
     )
 
@@ -153,7 +153,7 @@ def test_default_branch_resolution(
 ) -> None:
     state = base_state(tmp_path, branch_exists=True, **overrides)
 
-    process, final_state = run_orcha(
+    process, final_state = run_pid(
         tmp_path, ["feature/cool-stuff", "prompt"], state=state
     )
 
@@ -177,7 +177,7 @@ def test_default_branch_switch_or_pull_failures_return_error(
 ) -> None:
     state = base_state(tmp_path, **overrides)
 
-    process, _ = run_orcha(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
+    process, _ = run_pid(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
 
     assert process.returncode == 1
     assert message in process.stderr
@@ -200,7 +200,7 @@ def test_worktree_precreation_guards(
 ) -> None:
     state = base_state(tmp_path, **overrides)
 
-    process, _ = run_orcha(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
+    process, _ = run_pid(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
 
     assert process.returncode == 1
     assert message in process.stderr
@@ -208,9 +208,9 @@ def test_worktree_precreation_guards(
 
 def test_existing_worktree_path_is_rejected(tmp_path: Path) -> None:
     state = base_state(tmp_path)
-    Path(state["repo_root"]).with_name("orcha-feature-cool-stuff").mkdir()
+    Path(state["repo_root"]).with_name("pid-feature-cool-stuff").mkdir()
 
-    process, _ = run_orcha(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
+    process, _ = run_pid(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
 
     assert process.returncode == 1
     assert "path already exists" in process.stderr
@@ -228,7 +228,7 @@ def test_worktree_setup_failures_return_error(
 ) -> None:
     state = base_state(tmp_path, **overrides)
 
-    process, _ = run_orcha(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
+    process, _ = run_pid(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
 
     assert process.returncode == 1
     assert message in process.stderr
@@ -237,7 +237,7 @@ def test_worktree_setup_failures_return_error(
 def test_worktree_config_failure_cleans_up(tmp_path: Path) -> None:
     state = base_state(tmp_path, worktree_config_fail=True)
 
-    process, final_state = run_orcha(
+    process, final_state = run_pid(
         tmp_path, ["feature/cool-stuff", "prompt"], state=state
     )
 
@@ -254,7 +254,7 @@ def test_worktree_config_failure_cleans_up(tmp_path: Path) -> None:
 def test_mise_trust_failure_stops_after_worktree_creation(tmp_path: Path) -> None:
     state = base_state(tmp_path, mise_trust_fail=True)
 
-    process, final_state = run_orcha(
+    process, final_state = run_pid(
         tmp_path, ["feature/cool-stuff", "prompt"], state=state
     )
 
@@ -267,7 +267,7 @@ def test_mise_trust_failure_stops_after_worktree_creation(tmp_path: Path) -> Non
 def test_mise_is_optional_when_not_on_path(tmp_path: Path) -> None:
     state = base_state(tmp_path, worktree_dirty="", worktree_diff="")
 
-    process, final_state = run_orcha(
+    process, final_state = run_pid(
         tmp_path,
         ["feature/cool-stuff", "prompt"],
         state=state,
@@ -282,7 +282,7 @@ def test_mise_is_optional_when_not_on_path(tmp_path: Path) -> None:
 def test_initial_pi_failure_stops_before_review(tmp_path: Path) -> None:
     state = base_state(tmp_path, pi_fail_kinds=["initial"], pi_fail_status=13)
 
-    process, final_state = run_orcha(
+    process, final_state = run_pid(
         tmp_path, ["low", "feature/cool-stuff", "do work"], state=state
     )
 
@@ -295,7 +295,7 @@ def test_initial_pi_failure_stops_before_review(tmp_path: Path) -> None:
 def test_session_mode_runs_interactive_pi_then_resumes_flow(tmp_path: Path) -> None:
     state = base_state(tmp_path)
 
-    process, final_state = run_orcha(
+    process, final_state = run_pid(
         tmp_path,
         ["session", "2", "high", "feature/cool-stuff", "explore", "idea"],
         state=state,
@@ -304,7 +304,7 @@ def test_session_mode_runs_interactive_pi_then_resumes_flow(tmp_path: Path) -> N
     assert_success(process)
     assert "launching interactive agent session" in process.stdout
     assert "interactive agent session exited; resuming review/PR flow" in process.stdout
-    assert "orcha: PR attempt 1/2" in process.stdout
+    assert "pid: PR attempt 1/2" in process.stdout
     initial_call = final_state["pi_calls"][0]
     assert initial_call["kind"] == "initial"
     assert initial_call["interactive"] is True
@@ -317,7 +317,7 @@ def test_session_mode_runs_interactive_pi_then_resumes_flow(tmp_path: Path) -> N
 def test_session_mode_allows_no_initial_prompt(tmp_path: Path) -> None:
     state = base_state(tmp_path, pi_fail_kinds=["review"], pi_fail_status=17)
 
-    process, final_state = run_orcha(
+    process, final_state = run_pid(
         tmp_path, ["session", "feature/cool-stuff"], state=state
     )
 
@@ -332,7 +332,7 @@ def test_session_mode_allows_no_initial_prompt(tmp_path: Path) -> None:
 def test_session_pi_failure_stops_before_review(tmp_path: Path) -> None:
     state = base_state(tmp_path, pi_fail_kinds=["initial"], pi_fail_status=13)
 
-    process, final_state = run_orcha(
+    process, final_state = run_pid(
         tmp_path, ["session", "low", "feature/cool-stuff"], state=state
     )
 
@@ -374,7 +374,7 @@ def test_review_prompt_targets_commits_dirty_or_empty_work(
         **overrides,
     )
 
-    process, final_state = run_orcha(
+    process, final_state = run_pid(
         tmp_path, ["feature/cool-stuff", "original request"], state=state
     )
 
@@ -393,7 +393,7 @@ def test_review_prompt_targets_commits_dirty_or_empty_work(
 def test_no_changes_after_review_stops_before_pr(tmp_path: Path) -> None:
     state = base_state(tmp_path, worktree_dirty="", worktree_diff="")
 
-    process, final_state = run_orcha(
+    process, final_state = run_pid(
         tmp_path, ["feature/cool-stuff", "prompt"], state=state
     )
 
@@ -405,7 +405,7 @@ def test_no_changes_after_review_stops_before_pr(tmp_path: Path) -> None:
 def test_dirty_work_is_committed_then_pr_created_and_merged(tmp_path: Path) -> None:
     state = base_state(tmp_path)
 
-    process, final_state = run_orcha(
+    process, final_state = run_pid(
         tmp_path,
         ["2", "high", "feature/cool-stuff", "build", "thing"],
         state=state,
@@ -413,9 +413,9 @@ def test_dirty_work_is_committed_then_pr_created_and_merged(tmp_path: Path) -> N
 
     assert_success(process)
     assert "Created" in process.stdout
-    assert "orcha: PR attempt 1/2" in process.stdout
-    assert "orcha commit message" in process.stdout
-    assert "╭──── orcha github squash merged" in process.stdout
+    assert "pid: PR attempt 1/2" in process.stdout
+    assert "pid commit message" in process.stdout
+    assert "pid github squash merged" in process.stdout
     assert final_state["commit_messages"] == ["feat: implement cool stuff"]
     assert final_state["commit_bodies"] == [
         "- Implements the requested cool stuff.\n- Updates tests and docs as needed."
@@ -460,7 +460,7 @@ def test_message_generation_failures_stop_before_commit(
 ) -> None:
     state = base_state(tmp_path, **overrides)
 
-    process, final_state = run_orcha(
+    process, final_state = run_pid(
         tmp_path, ["feature/cool-stuff", "prompt"], state=state
     )
 
@@ -485,7 +485,7 @@ label = "agentx"
     )
     state = base_state(tmp_path, worktree_dirty="", worktree_diff="")
 
-    process, final_state = run_orcha(
+    process, final_state = run_pid(
         tmp_path,
         ["--config", str(config_path), "feature/cool-stuff", "build", "thing"],
         state=state,
@@ -507,7 +507,7 @@ label = "agentx"
 def test_prompt_preserves_unknown_option_like_words(tmp_path: Path) -> None:
     state = base_state(tmp_path, worktree_dirty="", worktree_diff="")
 
-    process, final_state = run_orcha(
+    process, final_state = run_pid(
         tmp_path,
         ["feature/cool-stuff", "use", "--flag", "value"],
         state=state,
@@ -522,7 +522,7 @@ def test_existing_commits_are_squashed_to_generated_message(
 ) -> None:
     state = base_state(tmp_path, commit_count=1, last_commit_title="feat: existing")
 
-    process, final_state = run_orcha(
+    process, final_state = run_pid(
         tmp_path, ["feature/cool-stuff", "prompt"], state=state
     )
 
@@ -536,7 +536,7 @@ def test_existing_commits_are_squashed_to_generated_message(
 def test_dirty_after_commit_stops_before_pr(tmp_path: Path) -> None:
     state = base_state(tmp_path, dirty_after_commit=True)
 
-    process, _ = run_orcha(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
+    process, _ = run_pid(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
 
     assert process.returncode == 1
     assert "worktree still has uncommitted changes after commit" in process.stderr
@@ -545,7 +545,7 @@ def test_dirty_after_commit_stops_before_pr(tmp_path: Path) -> None:
 def test_commit_failure_returns_before_pr(tmp_path: Path) -> None:
     state = base_state(tmp_path, commit_fail=True)
 
-    process, _ = run_orcha(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
+    process, _ = run_pid(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
 
     assert process.returncode == 1
     assert "commit failed" in process.stderr
@@ -554,7 +554,7 @@ def test_commit_failure_returns_before_pr(tmp_path: Path) -> None:
 def test_dirty_at_pr_attempt_gets_automated_feedback_commit(tmp_path: Path) -> None:
     state = base_state(tmp_path, dirty_after_log_once=" M generated\n")
 
-    process, final_state = run_orcha(
+    process, final_state = run_pid(
         tmp_path, ["feature/cool-stuff", "prompt"], state=state
     )
 
@@ -571,12 +571,12 @@ def test_existing_pr_no_checks_and_queued_merge(tmp_path: Path) -> None:
         merged_at_after_success="",
     )
 
-    process, final_state = run_orcha(
+    process, final_state = run_pid(
         tmp_path, ["feature/cool-stuff", "prompt"], state=state
     )
 
     assert_success(process)
-    assert "orcha: no CI checks reported; continuing" in process.stdout
+    assert "pid: no CI checks reported; continuing" in process.stdout
     assert "likely queued or auto-merge enabled" in process.stdout
     assert calls(final_state, "gh", "pr", "edit")
     assert not calls(final_state, "gh", "pr", "create")
@@ -595,7 +595,7 @@ def test_pr_setup_failures_return_error(
 ) -> None:
     state = base_state(tmp_path, **overrides)
 
-    process, _ = run_orcha(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
+    process, _ = run_pid(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
 
     assert process.returncode == 1
     assert message in process.stderr
@@ -613,7 +613,7 @@ def test_first_ci_followup_keeps_thinking_after_review_changes(
         ],
     )
 
-    process, final_state = run_orcha(
+    process, final_state = run_pid(
         tmp_path, ["feature/cool-stuff", "prompt"], state=state
     )
 
@@ -630,7 +630,7 @@ def test_first_ci_followup_keeps_thinking_after_review_changes(
         in process.stdout
     )
     assert "next agent thinking bumped to high" in process.stdout
-    assert "orcha: PR attempt 2/3" in process.stdout
+    assert "pid: PR attempt 2/3" in process.stdout
 
 
 def test_second_ci_followup_uses_bumped_thinking_after_review_changes(
@@ -646,7 +646,7 @@ def test_second_ci_followup_uses_bumped_thinking_after_review_changes(
         ],
     )
 
-    process, final_state = run_orcha(
+    process, final_state = run_pid(
         tmp_path, ["feature/cool-stuff", "prompt"], state=state
     )
 
@@ -676,7 +676,7 @@ def test_ci_fix_regenerates_pr_and_squash_message(tmp_path: Path) -> None:
         ],
     )
 
-    process, final_state = run_orcha(
+    process, final_state = run_pid(
         tmp_path, ["feature/cool-stuff", "prompt"], state=state
     )
 
@@ -696,7 +696,7 @@ def test_ci_fix_regenerates_pr_and_squash_message(tmp_path: Path) -> None:
 def test_ci_failure_on_last_attempt_leaves_pr_open(tmp_path: Path) -> None:
     state = base_state(tmp_path, checks_sequence=[{"status": 1, "out": "failed"}])
 
-    process, _ = run_orcha(tmp_path, ["1", "feature/cool-stuff", "prompt"], state=state)
+    process, _ = run_pid(tmp_path, ["1", "feature/cool-stuff", "prompt"], state=state)
 
     assert process.returncode == 1
     assert "CI checks failed after 1 attempts" in process.stderr
@@ -710,7 +710,7 @@ def test_ci_followup_pi_failure_returns_pi_status(tmp_path: Path) -> None:
         pi_fail_status=19,
     )
 
-    process, _ = run_orcha(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
+    process, _ = run_pid(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
 
     assert process.returncode == 19
     assert "agent exited with status 19 while fixing CI" in process.stderr
@@ -723,7 +723,7 @@ def test_pending_checks_time_out_and_fail_on_last_attempt(tmp_path: Path) -> Non
         checks_timeout_seconds=0,
     )
 
-    process, _ = run_orcha(tmp_path, ["1", "feature/cool-stuff", "prompt"], state=state)
+    process, _ = run_pid(tmp_path, ["1", "feature/cool-stuff", "prompt"], state=state)
 
     assert process.returncode == 8
     assert "CI checks still pending after 0 seconds" in process.stderr
@@ -740,7 +740,7 @@ def test_merge_failure_rebases_force_pushes_and_retries(tmp_path: Path) -> None:
         dirty_after_rebase_success=" M rebased\n",
     )
 
-    process, final_state = run_orcha(
+    process, final_state = run_pid(
         tmp_path, ["feature/cool-stuff", "prompt"], state=state
     )
 
@@ -761,7 +761,7 @@ def test_fetch_failure_after_merge_failure_returns_error(tmp_path: Path) -> None
         fetch_fail=True,
     )
 
-    process, _ = run_orcha(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
+    process, _ = run_pid(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
 
     assert process.returncode == 1
     assert "fetch failed" in process.stderr
@@ -778,7 +778,7 @@ def test_rebase_conflict_invokes_pi_resolution(tmp_path: Path) -> None:
         dirty_after_rebase_fix=" M resolved\n",
     )
 
-    process, final_state = run_orcha(
+    process, final_state = run_pid(
         tmp_path, ["feature/cool-stuff", "prompt"], state=state
     )
 
@@ -805,7 +805,7 @@ def test_rebase_conflict_retry_does_not_consume_agent_attempt(
         dirty_after_rebase_fix=" M resolved\n",
     )
 
-    process, final_state = run_orcha(
+    process, final_state = run_pid(
         tmp_path, ["1", "feature/cool-stuff", "prompt"], state=state
     )
 
@@ -832,7 +832,7 @@ def test_rebase_conflict_after_review_changes_does_not_bump_thinking(
         dirty_after_rebase_fix=" M resolved\n",
     )
 
-    process, final_state = run_orcha(
+    process, final_state = run_pid(
         tmp_path, ["low", "feature/cool-stuff", "prompt"], state=state
     )
 
@@ -855,7 +855,7 @@ def test_rebase_still_in_progress_after_pi_stops(tmp_path: Path) -> None:
         rebase_still_in_progress=True,
     )
 
-    process, _ = run_orcha(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
+    process, _ = run_pid(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
 
     assert process.returncode == 1
     assert "rebase still in progress after agent" in process.stderr
@@ -868,7 +868,7 @@ def test_merge_failure_but_github_reports_merged_cleans_up(tmp_path: Path) -> No
         merged_after_failed_merge=True,
     )
 
-    process, final_state = run_orcha(
+    process, final_state = run_pid(
         tmp_path, ["feature/cool-stuff", "prompt"], state=state
     )
 
@@ -882,7 +882,7 @@ def test_merge_failure_but_github_reports_merged_cleans_up(tmp_path: Path) -> No
 def test_merge_confirmation_failure_returns_error(tmp_path: Path) -> None:
     state = base_state(tmp_path, merged_at_query_fail=True)
 
-    process, _ = run_orcha(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
+    process, _ = run_pid(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
 
     assert process.returncode == 1
     assert "merged state could not be confirmed" in process.stderr
@@ -891,7 +891,7 @@ def test_merge_confirmation_failure_returns_error(tmp_path: Path) -> None:
 def test_merge_success_without_merged_at_leaves_pr_for_queue(tmp_path: Path) -> None:
     state = base_state(tmp_path, merged_at_after_success="")
 
-    process, _ = run_orcha(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
+    process, _ = run_pid(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
 
     assert_success(process)
     assert "likely queued or auto-merge enabled" in process.stdout
@@ -906,7 +906,7 @@ def test_merge_retry_does_not_consume_agent_attempt(tmp_path: Path) -> None:
         ],
     )
 
-    process, final_state = run_orcha(
+    process, final_state = run_pid(
         tmp_path, ["1", "feature/cool-stuff", "prompt"], state=state
     )
 
@@ -922,7 +922,7 @@ def test_merge_failure_after_retry_limit_leaves_pr_open(tmp_path: Path) -> None:
         merge_retry_limit=1,
     )
 
-    process, _ = run_orcha(tmp_path, ["1", "feature/cool-stuff", "prompt"], state=state)
+    process, _ = run_pid(tmp_path, ["1", "feature/cool-stuff", "prompt"], state=state)
 
     assert process.returncode == 9
     assert "github squash merge failed after 1 merge retries" in process.stderr
@@ -931,7 +931,7 @@ def test_merge_failure_after_retry_limit_leaves_pr_open(tmp_path: Path) -> None:
 def test_cleanup_worktree_remove_failure_is_reported(tmp_path: Path) -> None:
     state = base_state(tmp_path, worktree_remove_fail=True)
 
-    process, _ = run_orcha(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
+    process, _ = run_pid(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
 
     assert process.returncode == 1
     assert "worktree remove failed" in process.stderr
@@ -949,7 +949,7 @@ def test_rebase_pi_failure_returns_pi_status(tmp_path: Path) -> None:
         pi_fail_status=23,
     )
 
-    process, _ = run_orcha(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
+    process, _ = run_pid(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
 
     assert process.returncode == 23
     assert "agent exited with status 23 while resolving rebase" in process.stderr

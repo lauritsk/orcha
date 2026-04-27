@@ -1,4 +1,4 @@
-"""GitHub pull-request operations for Orcha."""
+"""GitHub pull-request operations for pid."""
 
 from __future__ import annotations
 
@@ -6,15 +6,15 @@ import sys
 import time
 from pathlib import Path
 
-from orcha.commands import CommandRunner
-from orcha.errors import abort
-from orcha.models import CommandResult, CommitMessage
-from orcha.output import echo_err, write_collected, write_command_output
-from orcha.utils import has_output
+from pid.commands import CommandRunner
+from pid.errors import abort
+from pid.models import CommandResult, CommitMessage
+from pid.output import echo_err, write_collected, write_command_output
+from pid.utils import has_output
 
 
 class GitHub:
-    """GitHub CLI operations used by the Orcha workflow."""
+    """GitHub CLI operations used by the pid workflow."""
 
     def __init__(self, runner: CommandRunner) -> None:
         self.runner = runner
@@ -104,7 +104,7 @@ class GitHub:
                 return checks_result.returncode, checks_result.stdout
             if int(time.time()) >= deadline:
                 echo_err(
-                    f"orcha: CI checks still pending after {timeout_seconds} seconds"
+                    f"pid: CI checks still pending after {timeout_seconds} seconds"
                 )
                 return checks_result.returncode, checks_result.stdout
             if poll_interval_seconds > 0:

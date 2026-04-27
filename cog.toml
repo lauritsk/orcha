@@ -14,7 +14,7 @@ path = "CHANGELOG.md"
 template = "remote"
 remote = "github.com"
 owner = "lauritsk"
-repository = "orcha"
+repository = "pid"
 
 [[changelog.authors]]
 signature = "karl@laurits.dev"

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import NoReturn
 
 
-class OrchaAbort(Exception):
+class PIDAbort(Exception):
     """Internal control-flow exception carrying intended exit code."""
 
     def __init__(self, code: int) -> None:
@@ -14,6 +14,6 @@ class OrchaAbort(Exception):
 
 
 def abort(code: int) -> NoReturn:
-    """Stop the current Orcha flow with an exit code."""
+    """Stop the current pid flow with an exit code."""
 
-    raise OrchaAbort(code)
+    raise PIDAbort(code)

@@ -1,4 +1,4 @@
-"""Command execution helpers for Orcha."""
+"""Command execution helpers for pid."""
 
 from __future__ import annotations
 
@@ -11,10 +11,10 @@ from subprocess import STDOUT
 from plumbum import local
 from plumbum.commands.processes import CommandNotFound
 
-from orcha.errors import abort
-from orcha.models import CommandResult
-from orcha.output import echo_err, write_command_output
-from orcha.session_logging import SessionLogger
+from pid.errors import abort
+from pid.models import CommandResult
+from pid.output import echo_err, write_command_output
+from pid.session_logging import SessionLogger
 
 
 class CommandRunner:
@@ -62,7 +62,7 @@ class CommandRunner:
                 )
                 result = CommandResult(returncode, stdout or "", stderr or "")
         except CommandNotFound, FileNotFoundError:
-            result = CommandResult(127, "", f"orcha: command not found: {args[0]}\n")
+            result = CommandResult(127, "", f"pid: command not found: {args[0]}\n")
         except Exception as error:
             if command_log is not None and self.logger is not None:
                 self.logger.command_exception(command_log, error)
@@ -92,7 +92,7 @@ class CommandRunner:
             completed = subprocess.run(args, cwd=cwd, check=False)
             result = CommandResult(completed.returncode, "", "")
         except FileNotFoundError:
-            result = CommandResult(127, "", f"orcha: command not found: {args[0]}\n")
+            result = CommandResult(127, "", f"pid: command not found: {args[0]}\n")
         except Exception as error:
             if command_log is not None and self.logger is not None:
                 self.logger.command_exception(command_log, error)

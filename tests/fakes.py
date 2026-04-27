@@ -1,4 +1,4 @@
-"""Fake command harness for Orcha flow tests."""
+"""Fake command harness for pid flow tests."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from typing import Any
 
 from typer.testing import CliRunner
 
-from orcha.cli import app
+from pid.cli import app
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
@@ -24,7 +24,7 @@ import shutil
 import sys
 from pathlib import Path
 
-state_path = Path(os.environ["ORCHA_FAKE_STATE"])
+state_path = Path(os.environ["PID_FAKE_STATE"])
 
 
 def load_state():
@@ -485,7 +485,7 @@ main()
 def base_state(
     tmp_path: Path, *, branch: str = "feature/cool-stuff", **overrides: Any
 ) -> dict[str, Any]:
-    repo = tmp_path / "orcha"
+    repo = tmp_path / "pid"
     repo.mkdir()
     (repo / ".git").mkdir()
     state: dict[str, Any] = {
@@ -524,7 +524,7 @@ class CliProcess:
     stderr: str
 
 
-def run_orcha(
+def run_pid(
     tmp_path: Path,
     args: list[str],
     *,
@@ -548,20 +548,20 @@ def run_orcha(
     env.update(
         {
             "PATH": str(bin_dir),
-            "ORCHA_FAKE_STATE": str(state_path),
+            "PID_FAKE_STATE": str(state_path),
             "TERM": "dumb",
             "NO_COLOR": "1",
             "PYTHONPATH": str(SRC),
             "HOME": str(tmp_path / "home"),
             "XDG_CONFIG_HOME": str(tmp_path / "xdg-config"),
-            "ORCHA_CHECKS_TIMEOUT_SECONDS": str(
+            "PID_CHECKS_TIMEOUT_SECONDS": str(
                 state.get("checks_timeout_seconds", 1800)
             ),
-            "ORCHA_CHECKS_POLL_INTERVAL_SECONDS": str(
+            "PID_CHECKS_POLL_INTERVAL_SECONDS": str(
                 state.get("checks_poll_interval_seconds", 0)
             ),
-            "ORCHA_LOG_DIR": str(tmp_path / "logs"),
-            "ORCHA_MERGE_RETRY_LIMIT": str(state.get("merge_retry_limit", 20)),
+            "PID_LOG_DIR": str(tmp_path / "logs"),
+            "PID_MERGE_RETRY_LIMIT": str(state.get("merge_retry_limit", 20)),
         }
     )
     runner = CliRunner()

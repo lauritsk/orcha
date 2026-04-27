@@ -1,6 +1,6 @@
-# Orcha
+# pid
 
-Orcha is a small CLI that orchestrates an AI coding agent through a full
+pid is a small CLI that orchestrates an AI coding agent through a full
 GitHub pull request lifecycle.
 
 It creates an isolated git worktree, runs a configured agent on your request,
@@ -35,11 +35,11 @@ cleans up the worktree.
   [`pi`](https://github.com/lauritsk/pi))
 - [`gh`](https://cli.github.com/) authenticated for the target repository
 - [`cog`](https://github.com/cocogitto/cocogitto) available on `PATH`
-- `mise` is optional at runtime; when present, Orcha runs `mise trust .` in
+- `mise` is optional at runtime; when present, pid runs `mise trust .` in
   the new worktree
 
 > [!IMPORTANT]
-> Run Orcha from a clean main worktree. Orcha stops if the main worktree has
+> Run pid from a clean main worktree. pid stops if the main worktree has
 > uncommitted or untracked changes.
 
 ## Installation
@@ -60,15 +60,15 @@ mise run test
 ## Usage
 
 ```sh
-orcha [ATTEMPTS] [THINKING] BRANCH PROMPT...
-orcha session [ATTEMPTS] [THINKING] BRANCH [PROMPT...]
+pid [ATTEMPTS] [THINKING] BRANCH PROMPT...
+pid session [ATTEMPTS] [THINKING] BRANCH [PROMPT...]
 ```
 
 Arguments:
 
 | Argument | Default | Description |
 | --- | --- | --- |
-| `session` | off | Use an interactive agent command instead of the non-interactive template; Orcha resumes after the agent exits. |
+| `session` | off | Use an interactive agent command instead of the non-interactive template; pid resumes after the agent exits. |
 | `ATTEMPTS` | `3` | Maximum agent rejection attempts. CI/check failures that require agent follow-up consume attempts; moved-base merge/rebase retries do not. Must be a positive integer. |
 | `THINKING` | `medium` | Initial agent thinking level. Values come from `agent.thinking_levels`. |
 | `BRANCH` | required | New branch name to create. Must not already exist locally or on `origin`. |
@@ -77,11 +77,11 @@ Arguments:
 Examples:
 
 ```sh
-orcha feature/add-readme "add project docs"
-orcha 2 high fix/repair-ci "fix failing tests"
-orcha docs/update-install update installation instructions
-orcha session feature/explore-api
-orcha session high feature/prototype-auth "explore auth UX options"
+pid feature/add-readme "add project docs"
+pid 2 high fix/repair-ci "fix failing tests"
+pid docs/update-install update installation instructions
+pid session feature/explore-api
+pid session high feature/prototype-auth "explore auth UX options"
 ```
 
 ## How it works
@@ -114,16 +114,16 @@ orcha session high feature/prototype-auth "explore auth UX options"
 
 ## Configuration
 
-Orcha loads TOML config from the platform default path, or from `--config PATH`.
+pid loads TOML config from the platform default path, or from `--config PATH`.
 The default path is optional; an explicit `--config PATH` must exist.
 
 Default config paths:
 
 | Platform/env | Path |
 | --- | --- |
-| macOS | `~/Library/Application Support/orcha/config.toml` |
-| Linux/other Unix | `~/.config/orcha/config.toml` |
-| `XDG_CONFIG_HOME` set to an absolute path | `$XDG_CONFIG_HOME/orcha/config.toml` |
+| macOS | `~/Library/Application Support/pid/config.toml` |
+| Linux/other Unix | `~/.config/pid/config.toml` |
+| `XDG_CONFIG_HOME` set to an absolute path | `$XDG_CONFIG_HOME/pid/config.toml` |
 
 Relative `XDG_CONFIG_HOME` values are ignored as required by the XDG Base
 Directory Specification.
@@ -145,9 +145,9 @@ label = "agent"
 `command` may be an array of strings or a shell-style string.
 `non_interactive_args` must be an array of strings, must include `{prompt}`, and
 may include `{thinking}`. `interactive_args` may include `{prompt}` and
-`{thinking}`; when it does not include `{prompt}`, Orcha appends the optional
+`{thinking}`; when it does not include `{prompt}`, pid appends the optional
 session prompt as a trailing argument. Those are the only supported template
-fields. Orcha never assumes a specific agent CLI internally; it only expands
+fields. pid never assumes a specific agent CLI internally; it only expands
 these templates.
 
 Example `pi` config:
@@ -205,13 +205,13 @@ label = "claude"
 Agent CLI flags change over time; treat these as starting points and adjust the
 argument template for your installed agent version.
 
-Orcha reads these optional environment variables:
+pid reads these optional environment variables:
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `ORCHA_CHECKS_TIMEOUT_SECONDS` | `1800` | How long to wait for pending GitHub checks. |
-| `ORCHA_CHECKS_POLL_INTERVAL_SECONDS` | `10` | Delay between check polling attempts. |
-| `ORCHA_MERGE_RETRY_LIMIT` | `20` | Safety cap for moved-base merge/rebase retries that do not consume `ATTEMPTS`. |
+| `PID_CHECKS_TIMEOUT_SECONDS` | `1800` | How long to wait for pending GitHub checks. |
+| `PID_CHECKS_POLL_INTERVAL_SECONDS` | `10` | Delay between check polling attempts. |
+| `PID_MERGE_RETRY_LIMIT` | `20` | Safety cap for moved-base merge/rebase retries that do not consume `ATTEMPTS`. |
 
 ## Development
 
@@ -231,11 +231,11 @@ version and `mise run release:publish` to publish a tagged release.
 
 ### Project layout
 
-- `src/orcha/cli.py` owns Typer command-line wiring.
-- `src/orcha/workflow.py` coordinates the high-level Orcha lifecycle.
-- `src/orcha/repository.py` wraps git, worktree, and commit operations.
-- `src/orcha/github.py` wraps GitHub CLI pull request operations.
-- `src/orcha/prompts.py` builds agent prompts and isolates untrusted output.
-- `src/orcha/commands.py`, `output.py`, `parsing.py`, `utils.py`,
+- `src/pid/cli.py` owns Typer command-line wiring.
+- `src/pid/workflow.py` coordinates the high-level pid lifecycle.
+- `src/pid/repository.py` wraps git, worktree, and commit operations.
+- `src/pid/github.py` wraps GitHub CLI pull request operations.
+- `src/pid/prompts.py` builds agent prompts and isolates untrusted output.
+- `src/pid/commands.py`, `output.py`, `parsing.py`, `utils.py`,
   `models.py`, and `errors.py` contain shared support code.
 - `tests/fakes.py` provides the fake command harness for flow tests.

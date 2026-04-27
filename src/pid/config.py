@@ -1,4 +1,4 @@
-"""Configuration loading for Orcha."""
+"""Configuration loading for pid."""
 
 from __future__ import annotations
 
@@ -11,8 +11,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from orcha.errors import abort
-from orcha.output import echo_err
+from pid.errors import abort
+from pid.output import echo_err
 
 DEFAULT_THINKING_LEVELS = ("low", "medium", "high", "xhigh")
 TEMPLATE_FIELDS = frozenset({"prompt", "thinking"})
@@ -61,8 +61,8 @@ class AgentConfig:
 
 
 @dataclass(frozen=True)
-class OrchaConfig:
-    """Top-level Orcha config."""
+class PIDConfig:
+    """Top-level pid config."""
 
     agent: AgentConfig = field(default_factory=AgentConfig)
 
@@ -74,42 +74,42 @@ def default_config_path() -> Path:
     if xdg_config_home:
         xdg_path = Path(xdg_config_home)
         if xdg_path.is_absolute():
-            return xdg_path / "orcha" / "config.toml"
+            return xdg_path / "pid" / "config.toml"
 
     home = Path.home()
     if sys.platform == "darwin":
-        return home / "Library" / "Application Support" / "orcha" / "config.toml"
+        return home / "Library" / "Application Support" / "pid" / "config.toml"
 
-    return home / ".config" / "orcha" / "config.toml"
+    return home / ".config" / "pid" / "config.toml"
 
 
-def load_config(path: Path | None = None) -> OrchaConfig:
+def load_config(path: Path | None = None) -> PIDConfig:
     """Load config.toml, returning defaults when the default file is absent."""
 
     explicit_path = path is not None
     config_path = path or default_config_path()
     if not config_path.exists():
         if explicit_path:
-            echo_err(f"orcha: config file not found: {config_path}")
+            echo_err(f"pid: config file not found: {config_path}")
             abort(2)
-        return OrchaConfig()
+        return PIDConfig()
 
     try:
         data = tomllib.loads(config_path.read_text(encoding="utf-8"))
     except OSError as error:
-        echo_err(f"orcha: could not read config at {config_path}: {error}")
+        echo_err(f"pid: could not read config at {config_path}: {error}")
         abort(2)
     except UnicodeDecodeError as error:
-        echo_err(f"orcha: config is not valid UTF-8 at {config_path}: {error}")
+        echo_err(f"pid: config is not valid UTF-8 at {config_path}: {error}")
         abort(2)
     except tomllib.TOMLDecodeError as error:
-        echo_err(f"orcha: invalid config TOML at {config_path}: {error}")
+        echo_err(f"pid: invalid config TOML at {config_path}: {error}")
         abort(2)
 
     return parse_config(data, config_path)
 
 
-def parse_config(data: dict[str, Any], path: Path) -> OrchaConfig:
+def parse_config(data: dict[str, Any], path: Path) -> PIDConfig:
     unknown_top = set(data) - {"agent"}
     if unknown_top:
         fail_config(path, f"unknown top-level key: {sorted(unknown_top)[0]}")
@@ -190,7 +190,7 @@ def parse_config(data: dict[str, Any], path: Path) -> OrchaConfig:
     if review_thinking and review_thinking not in thinking_levels:
         fail_config(path, "agent.review_thinking must be in agent.thinking_levels")
 
-    return OrchaConfig(
+    return PIDConfig(
         agent=AgentConfig(
             command=command,
             non_interactive_args=non_interactive_args,
@@ -254,5 +254,5 @@ def validate_template(args: tuple[str, ...], path: Path, key: str) -> set[str]:
 
 
 def fail_config(path: Path, message: str) -> None:
-    echo_err(f"orcha: invalid config at {path}: {message}")
+    echo_err(f"pid: invalid config at {path}: {message}")
     abort(2)

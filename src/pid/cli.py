@@ -1,4 +1,4 @@
-"""Command line interface for Orcha."""
+"""Command line interface for pid."""
 
 from __future__ import annotations
 
@@ -7,9 +7,9 @@ from typing import Annotated
 
 import typer
 
-from orcha.config import load_config
-from orcha.errors import OrchaAbort
-from orcha.workflow import run_orcha
+from pid.config import load_config
+from pid.errors import PIDAbort
+from pid.workflow import run_pid
 
 APP_CONTEXT = {
     "allow_extra_args": True,
@@ -44,10 +44,10 @@ def main(
         ),
     ] = None,
 ) -> None:
-    """Run Orcha."""
+    """Run pid."""
     raw_args = [*(args or []), *ctx.args]
     try:
         loaded_config = load_config(config)
-    except OrchaAbort as error:
+    except PIDAbort as error:
         raise typer.Exit(error.code) from error
-    raise typer.Exit(run_orcha(raw_args, config=loaded_config))
+    raise typer.Exit(run_pid(raw_args, config=loaded_config))

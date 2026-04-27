@@ -1,4 +1,4 @@
-"""Session log file support for Orcha."""
+"""Session log file support for pid."""
 
 from __future__ import annotations
 
@@ -12,9 +12,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Mapping, TextIO
 
-from orcha.models import CommandResult
+from pid.models import CommandResult
 
-LOG_DIR_ENV = "ORCHA_LOG_DIR"
+LOG_DIR_ENV = "PID_LOG_DIR"
 
 
 def _absolute_env_path(value: str) -> Path | None:
@@ -32,13 +32,13 @@ def session_log_dir(
     platform_name: str | None = None,
     home: Path | None = None,
 ) -> Path:
-    """Return the directory where Orcha session logs should be written.
+    """Return the directory where pid session logs should be written.
 
     Precedence:
-    1. ORCHA_LOG_DIR explicit override.
-    2. XDG_STATE_HOME/orcha/logs when XDG_STATE_HOME is set, including macOS.
-    3. ~/Library/Logs/orcha on macOS.
-    4. ~/.local/state/orcha/logs elsewhere, per XDG base directory defaults.
+    1. PID_LOG_DIR explicit override.
+    2. XDG_STATE_HOME/pid/logs when XDG_STATE_HOME is set, including macOS.
+    3. ~/Library/Logs/pid on macOS.
+    4. ~/.local/state/pid/logs elsewhere, per XDG base directory defaults.
     """
 
     env = os.environ if environ is None else environ
@@ -47,13 +47,13 @@ def session_log_dir(
 
     if xdg_state_home := env.get("XDG_STATE_HOME"):
         if xdg_path := _absolute_env_path(xdg_state_home):
-            return xdg_path / "orcha" / "logs"
+            return xdg_path / "pid" / "logs"
 
     base_home = Path.home() if home is None else home
     system = platform.system() if platform_name is None else platform_name
     if system == "Darwin":
-        return base_home / "Library" / "Logs" / "orcha"
-    return base_home / ".local" / "state" / "orcha" / "logs"
+        return base_home / "Library" / "Logs" / "pid"
+    return base_home / ".local" / "state" / "pid" / "logs"
 
 
 def _utc_timestamp() -> str:
@@ -73,7 +73,7 @@ class CommandLogHandle:
 
 
 class SessionLogger:
-    """Append-only human-readable log for one Orcha run."""
+    """Append-only human-readable log for one pid run."""
 
     def __init__(self, path: Path, stream: TextIO) -> None:
         self.path = path
@@ -91,7 +91,7 @@ class SessionLogger:
         directory.mkdir(mode=0o700, parents=True, exist_ok=True)
         if not existed:
             directory.chmod(0o700)
-        path = directory / f"orcha-session-{_filename_timestamp()}-p{os.getpid()}.log"
+        path = directory / f"pid-session-{_filename_timestamp()}-p{os.getpid()}.log"
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
         file_descriptor = os.open(path, flags, 0o600)
         stream = os.fdopen(file_descriptor, "w", encoding="utf-8")
@@ -100,7 +100,7 @@ class SessionLogger:
         logger.line(f"started: {_utc_timestamp()}")
         logger.line(f"pid: {os.getpid()}")
         logger.line(f"cwd: {Path.cwd()}")
-        logger.line(f"argv: {shlex.join(['orcha', *argv])}")
+        logger.line(f"argv: {shlex.join(['pid', *argv])}")
         logger.line(f"python: {sys.executable}")
         logger.line(f"log: {path}")
         logger.blank()
@@ -133,9 +133,9 @@ class SessionLogger:
         self.line(f"[{_utc_timestamp()}] {message}")
 
     def output(self, stream_name: str, value: str) -> None:
-        """Record an Orcha message written to stdout/stderr."""
+        """Record an pid message written to stdout/stderr."""
 
-        self.line(f"[{_utc_timestamp()}] ORCHA {stream_name.upper()}: {value}")
+        self.line(f"[{_utc_timestamp()}] PID {stream_name.upper()}: {value}")
 
     def step_start(self, title: str, *, cwd: str | Path | None = None) -> None:
         """Start a named step, ending any previous step with a clear boundary."""

@@ -1,18 +1,18 @@
-"""Console output helpers for Orcha."""
+"""Console output helpers for pid."""
 
 from __future__ import annotations
 
 import sys
 from typing import TextIO
 
-from orcha.session_logging import SessionLogger
+from pid.session_logging import SessionLogger
 
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from orcha.models import CommandResult, CommitMessage
+from pid.models import CommandResult, CommitMessage
 
 OUT_CONSOLE = Console(highlight=False)
 _CURRENT_LOGGER: SessionLogger | None = None
@@ -78,7 +78,7 @@ def print_commit_message(message: CommitMessage) -> None:
     OUT_CONSOLE.print(
         Panel.fit(
             table,
-            title=Text("orcha commit message", style="bold cyan"),
+            title=Text("pid commit message", style="bold cyan"),
             border_style="cyan",
         )
     )
@@ -97,7 +97,7 @@ def print_merge_success(pr_title: str, pr_url: str) -> None:
     OUT_CONSOLE.print(
         Panel.fit(
             table,
-            title=Text("orcha github squash merged", style="bold green"),
+            title=Text("pid github squash merged", style="bold green"),
             border_style="green",
         )
     )

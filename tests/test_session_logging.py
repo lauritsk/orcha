@@ -3,8 +3,8 @@ from __future__ import annotations
 import stat
 from pathlib import Path
 
-from orcha.session_logging import LOG_DIR_ENV, SessionLogger, session_log_dir
-from tests.fakes import assert_success, base_state, run_orcha
+from pid.session_logging import LOG_DIR_ENV, SessionLogger, session_log_dir
+from tests.fakes import assert_success, base_state, run_pid
 
 
 def test_session_log_dir_uses_explicit_override(tmp_path: Path) -> None:
@@ -18,7 +18,7 @@ def test_session_log_dir_uses_xdg_state_home_when_set(tmp_path: Path) -> None:
 
     assert (
         session_log_dir({"XDG_STATE_HOME": str(xdg_state)}, platform_name="Darwin")
-        == xdg_state / "orcha" / "logs"
+        == xdg_state / "pid" / "logs"
     )
 
 
@@ -27,21 +27,21 @@ def test_session_log_dir_ignores_relative_xdg_state_home(tmp_path: Path) -> None
         session_log_dir(
             {"XDG_STATE_HOME": "relative-state"}, platform_name="Linux", home=tmp_path
         )
-        == tmp_path / ".local" / "state" / "orcha" / "logs"
+        == tmp_path / ".local" / "state" / "pid" / "logs"
     )
 
 
 def test_session_log_dir_defaults_to_macos_native_logs(tmp_path: Path) -> None:
     assert (
         session_log_dir({}, platform_name="Darwin", home=tmp_path)
-        == tmp_path / "Library" / "Logs" / "orcha"
+        == tmp_path / "Library" / "Logs" / "pid"
     )
 
 
 def test_session_log_dir_defaults_to_xdg_state_home_layout(tmp_path: Path) -> None:
     assert (
         session_log_dir({}, platform_name="Linux", home=tmp_path)
-        == tmp_path / ".local" / "state" / "orcha" / "logs"
+        == tmp_path / ".local" / "state" / "pid" / "logs"
     )
 
 
@@ -65,12 +65,12 @@ def test_session_log_captures_agent_steps_commands_and_outputs(tmp_path: Path) -
         cog_out="cog verified\n",
     )
 
-    process, _ = run_orcha(
+    process, _ = run_pid(
         tmp_path, ["feature/cool-stuff", "build", "thing"], state=state
     )
 
     assert_success(process)
-    logs = sorted((tmp_path / "logs").glob("orcha-session-*.log"))
+    logs = sorted((tmp_path / "logs").glob("pid-session-*.log"))
     assert len(logs) == 1
     log = logs[0].read_text()
     assert "SESSION START" in log

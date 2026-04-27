@@ -10,7 +10,7 @@
 - [x] Fix release workflow dirty `mise.lock`
 - [x] Configure GoReleaser cosign signing and Syft SBOMs
 - [x] Move version bump hooks into `cog.toml`
-- [x] Implement Orcha as a Python/Typer app
+- [x] Implement pid as a Python/Typer app
 - [x] Derive package version from metadata
 - [x] Tie audit task into mise check
 - [x] Add docs when requested
@@ -20,6 +20,8 @@
 - [x] Add plumbum command execution dependency
 - [x] Add docs update enforcement to review agent
 - [x] Add configurable agent harness
+- [x] Rename project to pid
+- [x] Rename repository and git remote to pid
 - [ ] Add higher-level orchestrator agent (see `ORCHESTRATOR_AGENT_PLAN.md`)
 - [x] Fix PR merge attempts counting only review rejects
 - [x] Fix thinking bump on rebase conflict-only failures

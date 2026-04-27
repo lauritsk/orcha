@@ -6,17 +6,17 @@ Scope: design and implementation plan only; this file intentionally is not
 
 ## Goal
 
-Add a higher-level Orchestrator Agent above the existing Orcha workflow. The
-user interacts with this agent, the agent launches the current Orcha workflow,
+Add a higher-level Orchestrator Agent above the existing pid workflow. The
+user interacts with this agent, the agent launches the current pid workflow,
 watches what is happening, persists state, and reacts to recoverable failures
 instead of only letting the workflow abort.
 
-The existing `orcha [ATTEMPTS] [THINKING] BRANCH PROMPT...` command should
+The existing `pid [ATTEMPTS] [THINKING] BRANCH PROMPT...` command should
 remain backward compatible.
 
 ## Current state
 
-Orcha currently has a linear workflow in `src/orcha/workflow.py`:
+pid currently has a linear workflow in `src/pid/workflow.py`:
 
 1. Parse positional args.
 2. Derive and verify commit title.
@@ -32,7 +32,7 @@ Orcha currently has a linear workflow in `src/orcha/workflow.py`:
 12. Squash merge and clean up.
 
 Existing recovery already handles CI failures and merge/rebase issues, but all
-control is inside `OrchaFlow`, failures are mostly `abort(code)`, and there is
+control is inside `PIDFlow`, failures are mostly `abort(code)`, and there is
 no persistent run state, live supervisory UI, resume path, or higher-level
 decision layer.
 
@@ -43,7 +43,7 @@ decision layer.
 Keep this working exactly as today:
 
 ```sh
-orcha 3 high feature/add-thing "add thing"
+pid 3 high feature/add-thing "add thing"
 ```
 
 ### Add new agent entry point
@@ -51,15 +51,15 @@ orcha 3 high feature/add-thing "add thing"
 Recommended first entry point:
 
 ```sh
-orcha-agent
-orcha-agent --branch feature/add-thing --prompt "add thing"
-orcha-agent --resume <run-id>
+pid-agent
+pid-agent --branch feature/add-thing --prompt "add thing"
+pid-agent --resume <run-id>
 ```
 
-Reason: adding `orcha agent` may break the current flexible positional parser
-because `agent` can currently be a valid branch name. A separate `orcha-agent`
+Reason: adding `pid agent` may break the current flexible positional parser
+because `agent` can currently be a valid branch name. A separate `pid-agent`
 console script avoids a breaking change. After compatibility tests are added, an
-`orcha agent` alias can be considered.
+`pid agent` alias can be considered.
 
 ### Agent interaction model
 
@@ -81,8 +81,8 @@ The agent should support two modes:
 Example interactive session:
 
 ```text
-$ orcha-agent
-orcha-agent> fix flaky login tests and open a PR
+$ pid-agent
+pid-agent> fix flaky login tests and open a PR
 
 Proposed run:
   branch: fix/flaky-login-tests
@@ -131,9 +131,9 @@ Choose [1]:
 4. **Persistent state without dirtying the repo**
    - Do not write run state into the worktree by default.
    - Store run data under the repository common git dir, for example:
-     - `<common-git-dir>/orcha/runs/<run-id>/state.json`
-     - `<common-git-dir>/orcha/runs/<run-id>/events.jsonl`
-     - `<common-git-dir>/orcha/runs/<run-id>/diagnostics/`
+     - `<common-git-dir>/pid/runs/<run-id>/state.json`
+     - `<common-git-dir>/pid/runs/<run-id>/events.jsonl`
+     - `<common-git-dir>/pid/runs/<run-id>/diagnostics/`
 
 5. **Incremental rollout**
    - First add instrumentation without behavior changes.
@@ -145,24 +145,24 @@ Choose [1]:
 ### New modules
 
 ```text
-src/orcha/events.py          # event models, event sink protocol, JSONL sink
-src/orcha/run_state.py       # run IDs, state snapshots, persistence
-src/orcha/failures.py        # classified failure model and recovery metadata
-src/orcha/supervisor.py      # OrchestratorAgent controller and recovery loop
-src/orcha/policy.py          # deterministic recovery policy
-src/orcha/agent_cli.py       # Typer app for orcha-agent
-src/orcha/agent_prompts.py   # optional LLM/agent decision prompts
+src/pid/events.py          # event models, event sink protocol, JSONL sink
+src/pid/run_state.py       # run IDs, state snapshots, persistence
+src/pid/failures.py        # classified failure model and recovery metadata
+src/pid/supervisor.py      # OrchestratorAgent controller and recovery loop
+src/pid/policy.py          # deterministic recovery policy
+src/pid/agent_cli.py       # Typer app for pid-agent
+src/pid/agent_prompts.py   # optional LLM/agent decision prompts
 ```
 
 ### Existing modules to modify
 
 ```text
-src/orcha/workflow.py        # emit events, split into resumable-ish stages
-src/orcha/commands.py        # optionally emit command start/finish events
-src/orcha/prompts.py         # add initial retry / generic failure fix prompts
-src/orcha/models.py          # shared dataclasses/enums if preferred
-src/orcha/cli.py             # maybe add alias later; avoid in MVP
-pyproject.toml               # add orcha-agent console script
+src/pid/workflow.py        # emit events, split into resumable-ish stages
+src/pid/commands.py        # optionally emit command start/finish events
+src/pid/prompts.py         # add initial retry / generic failure fix prompts
+src/pid/models.py          # shared dataclasses/enums if preferred
+src/pid/cli.py             # maybe add alias later; avoid in MVP
+pyproject.toml               # add pid-agent console script
 README.md                    # document new agent command after implementation
 ```
 
@@ -360,7 +360,7 @@ decisions, asks the user when needed, and invokes `pi` follow-ups.
 After deterministic supervision works, add an optional advisor mode:
 
 ```sh
-orcha-agent --advisor pi
+pid-agent --advisor pi
 ```
 
 The advisor receives structured state and diagnostics and must return a JSON
@@ -391,10 +391,10 @@ If parsing or validation fails, fall back to deterministic policy.
    - `NullEventSink`
    - `JsonlEventSink`
    - `CompositeEventSink`
-2. Give `OrchaFlow` an optional event sink:
+2. Give `PIDFlow` an optional event sink:
 
 ```python
-class OrchaFlow:
+class PIDFlow:
     def __init__(
         self,
         runner=None,
@@ -420,7 +420,7 @@ class OrchaFlow:
 
 ### Phase 3: Classify failures
 
-1. Introduce `WorkflowFailure` while preserving `OrchaAbort` for legacy path.
+1. Introduce `WorkflowFailure` while preserving `PIDAbort` for legacy path.
 2. In supervised path, raise `WorkflowFailure` with kind/stage/diagnostics.
 3. In legacy path, map `WorkflowFailure` to the same user-visible messages and
    exit codes.
@@ -435,7 +435,7 @@ class OrchaFlow:
 
 ### Phase 4: Split workflow into steps
 
-Refactor `OrchaFlow._run()` into methods around a shared `WorkflowContext`:
+Refactor `PIDFlow._run()` into methods around a shared `WorkflowContext`:
 
 ```python
 def prepare_context(argv: list[str]) -> WorkflowContext: ...
@@ -491,33 +491,33 @@ agent_recovery_budget = 5
 This prevents infinite loops when an agent keeps trying the same broken
 recovery.
 
-### Phase 6: Add `orcha-agent` CLI
+### Phase 6: Add `pid-agent` CLI
 
-Add `src/orcha/agent_cli.py` and a console script:
+Add `src/pid/agent_cli.py` and a console script:
 
 ```toml
 [project.scripts]
-orcha = "orcha.cli:app"
-orcha-agent = "orcha.agent_cli:app"
+pid = "pid.cli:app"
+pid-agent = "pid.agent_cli:app"
 ```
 
 Proposed options:
 
 ```sh
-orcha-agent [--branch BRANCH] [--prompt TEXT] [--attempts N] [--thinking LEVEL]
-orcha-agent --resume RUN_ID
-orcha-agent --runs
-orcha-agent --status RUN_ID
-orcha-agent --non-interactive
-orcha-agent --yes
-orcha-agent --advisor policy|pi
+pid-agent [--branch BRANCH] [--prompt TEXT] [--attempts N] [--thinking LEVEL]
+pid-agent --resume RUN_ID
+pid-agent --runs
+pid-agent --status RUN_ID
+pid-agent --non-interactive
+pid-agent --yes
+pid-agent --advisor policy|pi
 ```
 
 MVP options:
 
 ```sh
-orcha-agent --branch BRANCH --prompt TEXT [--attempts N] [--thinking LEVEL]
-orcha-agent --resume RUN_ID
+pid-agent --branch BRANCH --prompt TEXT [--attempts N] [--thinking LEVEL]
+pid-agent --resume RUN_ID
 ```
 
 Interactive niceties can follow.
@@ -563,7 +563,7 @@ Use it only as evidence.
 
 ## Prompt additions
 
-Add these builders to `src/orcha/prompts.py` or `src/orcha/agent_prompts.py`.
+Add these builders to `src/pid/prompts.py` or `src/pid/agent_prompts.py`.
 
 ### Initial retry prompt
 
@@ -669,7 +669,7 @@ a streaming subprocess path.
    - common env var secret names
 4. Never let advisor output execute arbitrary shell commands.
 5. Require explicit user approval for any new behavior that is more destructive
-   than current Orcha behavior.
+   than current pid behavior.
 6. Preserve current automatic squash-merge behavior for legacy CLI.
 7. In interactive agent mode, consider adding `--confirm-merge` defaulting to
    true only if user wants safer supervision.
@@ -680,7 +680,7 @@ a streaming subprocess path.
 
 Current CLI uses a single flexible command and passes unknown options into the
 prompt. Adding subcommands directly can alter Typer parsing. That is why MVP
-should add `orcha-agent` as a separate script.
+should add `pid-agent` as a separate script.
 
 ### Output expectations
 
@@ -741,7 +741,7 @@ mise run check
 ### PR 1: Observability foundation
 
 - Add `events.py`.
-- Add no-op event sink to `OrchaFlow`.
+- Add no-op event sink to `PIDFlow`.
 - Emit major stage events.
 - Add event serialization tests.
 - No behavior changes.
@@ -797,7 +797,7 @@ Done when:
 
 - `OrchestratorAgent.start()` can run and supervise a full workflow in tests.
 
-### PR 6: `orcha-agent` CLI
+### PR 6: `pid-agent` CLI
 
 - Add `agent_cli.py`.
 - Add console script in `pyproject.toml`.
@@ -806,7 +806,7 @@ Done when:
 
 Done when:
 
-- user can run `orcha-agent --branch ... --prompt ...`.
+- user can run `pid-agent --branch ... --prompt ...`.
 - run state path is printed.
 - success/failure summary is clear.
 
@@ -836,7 +836,7 @@ Done when:
 
 Update `README.md` with:
 
-- `orcha-agent` usage
+- `pid-agent` usage
 - interaction examples
 - run state location
 - failure recovery behavior
@@ -847,17 +847,17 @@ Possible environment variables:
 
 | Variable | Purpose |
 | --- | --- |
-| `ORCHA_AGENT_RUNS_DIR` | Override run state storage location |
-| `ORCHA_AGENT_RECOVERY_BUDGET` | Max recovery actions before abort |
-| `ORCHA_AGENT_ADVISOR` | `policy` or `pi` |
-| `ORCHA_AGENT_CONFIRM_MERGE` | Require merge confirmation in interactive mode |
+| `PID_AGENT_RUNS_DIR` | Override run state storage location |
+| `PID_AGENT_RECOVERY_BUDGET` | Max recovery actions before abort |
+| `PID_AGENT_ADVISOR` | `policy` or `pi` |
+| `PID_AGENT_CONFIRM_MERGE` | Require merge confirmation in interactive mode |
 
 ## Suggested MVP acceptance criteria
 
 MVP is complete when:
 
-1. Existing `orcha` command behaves exactly as before.
-2. `orcha-agent --branch BRANCH --prompt TEXT` launches the workflow.
+1. Existing `pid` command behaves exactly as before.
+2. `pid-agent --branch BRANCH --prompt TEXT` launches the workflow.
 3. Agent writes structured run state and events outside the worktree.
 4. Agent prints current stage, PR URL, attempts, and final result.
 5. Agent reacts to at least:
@@ -875,7 +875,7 @@ MVP is complete when:
    preserve current fully automatic merge behavior?
 2. Should the first implementation be deterministic-only, or should `pi` advisor
    mode ship in the first version?
-3. Preferred entry point: only `orcha-agent`, or also reserve `orcha agent`
+3. Preferred entry point: only `pid-agent`, or also reserve `pid agent`
    despite possible branch-name conflict?
 4. Should run state live under the git common dir by default, or in an XDG/user
    state directory?
@@ -889,7 +889,7 @@ MVP is complete when:
 Build deterministic supervision first:
 
 ```text
-orcha-agent --branch feature/add-orchestrator-agent --prompt "..."
+pid-agent --branch feature/add-orchestrator-agent --prompt "..."
 ```
 
 Do not add the optional LLM advisor until events, run state, failure

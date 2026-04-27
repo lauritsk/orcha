@@ -1,4 +1,4 @@
-"""General-purpose Orcha helpers."""
+"""General-purpose pid helpers."""
 
 from __future__ import annotations
 

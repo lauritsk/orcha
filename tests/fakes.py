@@ -185,6 +185,12 @@ def cmd_git(state, original_args):
     if args[:2] == ["rev-list", "--count"]:
         finish(state, 0, str(state.get("commit_count", 0)))
 
+    if args[:2] == ["merge-base", "--is-ancestor"]:
+        if state.get("base_is_ancestor_sequence"):
+            item = state["base_is_ancestor_sequence"].pop(0)
+            state["base_is_ancestor"] = bool(item)
+        finish(state, 0 if state.get("base_is_ancestor", True) else 1)
+
     if args == ["diff", "--binary", "--no-ext-diff"]:
         finish(state, 0, state.get("worktree_diff", ""))
 
@@ -244,6 +250,7 @@ def cmd_git(state, original_args):
             finish(state, 1, err="rebase failed")
         if state.get("dirty_after_rebase_success"):
             state["worktree_dirty"] = state["dirty_after_rebase_success"]
+        state["base_is_ancestor"] = True
         finish(state)
 
     finish(state, 97, err="unhandled git: " + " ".join(args))

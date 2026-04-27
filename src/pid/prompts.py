@@ -62,7 +62,9 @@ def build_ci_fix_prompt(
 
 def build_rebase_fix_prompt(
     *,
+    original_prompt: str,
     pr_title: str,
+    pr_body: str,
     pr_url: str,
     default_branch: str,
     commit_title: str,
@@ -71,7 +73,7 @@ def build_rebase_fix_prompt(
     template: str | None = None,
     diagnostic_output_limit: int | None = None,
 ) -> str:
-    """Build a prompt for resolving rebase conflicts after a failed merge."""
+    """Build a prompt for resolving rebase conflicts."""
 
     prompts = PromptConfig()
     prompt_template = prompts.rebase_fix if template is None else template
@@ -79,7 +81,9 @@ def build_rebase_fix_prompt(
     if diagnostic_output_limit is not None:
         limit = diagnostic_output_limit
     return prompt_template.format(
+        original_prompt=original_prompt,
         pr_title=pr_title,
+        pr_body=pr_body,
         pr_url=pr_url,
         default_branch=default_branch,
         commit_title=commit_title,

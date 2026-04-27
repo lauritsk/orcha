@@ -762,6 +762,7 @@ def test_workflow_config_controls_merge_retry_limit(tmp_path: Path) -> None:
         """
 [workflow]
 merge_retry_limit = 0
+base_refresh_enabled = false
 """.strip()
     )
     state = base_state(
@@ -1081,6 +1082,162 @@ def test_pending_checks_time_out_and_fail_on_last_attempt(tmp_path: Path) -> Non
     assert process.returncode == 8
     assert "CI checks still pending after 0 seconds" in process.stderr
     assert "CI checks failed after 1 attempts" in process.stderr
+
+
+def test_before_message_base_refresh_regenerates_message(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        """
+[workflow]
+base_refresh_stages = ["before_message"]
+""".strip()
+    )
+    state = base_state(tmp_path, base_is_ancestor=False)
+
+    process, final_state = run_pid(
+        tmp_path,
+        ["--config", str(config_path), "feature/cool-stuff", "prompt"],
+        state=state,
+    )
+
+    assert_success(process)
+    assert "before_message base moved; rebasing onto origin/main" in process.stdout
+    assert final_state["message_index"] == 2
+
+
+def test_before_pr_base_refresh_rebases_before_first_push(tmp_path: Path) -> None:
+    state = base_state(tmp_path, base_is_ancestor=False)
+
+    process, final_state = run_pid(
+        tmp_path, ["feature/cool-stuff", "prompt"], state=state
+    )
+
+    assert_success(process)
+    assert "before_pr base moved; rebasing onto origin/main" in process.stdout
+    assert calls(final_state, "git", "fetch", "origin", "main")
+    assert calls(final_state, "git", "rebase", "origin/main")
+    assert ["push", "--force-with-lease", "-u", "origin", "feature/cool-stuff"] in [
+        call["args"][-5:] for call in calls(final_state, "git", "push")
+    ]
+    assert final_state["message_index"] == 2
+
+
+def test_after_checks_base_refresh_repushes_and_reruns_checks(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        """
+[workflow]
+base_refresh_stages = ["before_pr", "after_checks"]
+""".strip()
+    )
+    state = base_state(
+        tmp_path,
+        base_is_ancestor_sequence=[True, False, True],
+        checks_sequence=[
+            {"status": 0, "out": "checks passed once"},
+            {"status": 0, "out": "checks passed twice"},
+        ],
+    )
+
+    process, final_state = run_pid(
+        tmp_path,
+        ["--config", str(config_path), "feature/cool-stuff", "prompt"],
+        state=state,
+    )
+
+    assert_success(process)
+    assert "after_checks base moved; rebasing onto origin/main" in process.stdout
+    assert final_state["checks_index"] == 2
+    assert ["push", "--force-with-lease", "-u", "origin", "feature/cool-stuff"] in [
+        call["args"][-5:] for call in calls(final_state, "git", "push")
+    ]
+
+
+def test_base_refresh_limit_stops_when_base_moved(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        """
+[workflow]
+base_refresh_limit = 0
+""".strip()
+    )
+    state = base_state(tmp_path, base_is_ancestor=False)
+
+    process, _ = run_pid(
+        tmp_path,
+        ["--config", str(config_path), "feature/cool-stuff", "prompt"],
+        state=state,
+    )
+
+    assert process.returncode == 1
+    assert "base refresh limit reached" in process.stderr
+    assert "base refresh stopped before PR push: limit_reached" in process.stderr
+
+
+def test_base_refresh_conflict_without_agent_fix_stops(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        """
+[workflow]
+base_refresh_agent_conflict_fix = false
+""".strip()
+    )
+    state = base_state(
+        tmp_path,
+        base_is_ancestor=False,
+        rebase_conflict_once=True,
+    )
+
+    process, final_state = run_pid(
+        tmp_path,
+        ["--config", str(config_path), "feature/cool-stuff", "prompt"],
+        state=state,
+    )
+
+    assert process.returncode == 1
+    assert "base refresh rebase conflicted" in process.stderr
+    assert "base refresh stopped before PR push: conflict_unresolved" in process.stderr
+    assert not [
+        call for call in final_state["pi_calls"] if call["kind"] == "rebase_fix"
+    ]
+
+
+def test_base_refresh_conflict_invokes_pi_resolution(tmp_path: Path) -> None:
+    state = base_state(
+        tmp_path,
+        base_is_ancestor=False,
+        rebase_conflict_once=True,
+        dirty_after_rebase_fix=" M resolved\n",
+    )
+
+    process, final_state = run_pid(
+        tmp_path, ["feature/cool-stuff", "prompt"], state=state
+    )
+
+    assert_success(process)
+    rebase_calls = [
+        call for call in final_state["pi_calls"] if call["kind"] == "rebase_fix"
+    ]
+    assert len(rebase_calls) == 1
+    assert "Resolve integration only; do not expand scope" in rebase_calls[0]["prompt"]
+    assert "Original request: prompt" in rebase_calls[0]["prompt"]
+    assert "Current PR body:" in rebase_calls[0]["prompt"]
+    assert "rebase conflict" in rebase_calls[0]["prompt"]
+
+
+def test_base_refresh_stops_if_agent_leaves_rebase_in_progress(tmp_path: Path) -> None:
+    state = base_state(
+        tmp_path,
+        base_is_ancestor=False,
+        rebase_conflict_once=True,
+        rebase_still_in_progress=True,
+    )
+
+    process, _ = run_pid(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
+
+    assert process.returncode == 1
+    assert "base refresh rebase still in progress after agent" in process.stderr
+    assert "base refresh stopped before PR push: conflict_unresolved" in process.stderr
 
 
 def test_merge_failure_rebases_force_pushes_and_retries(tmp_path: Path) -> None:

@@ -308,6 +308,8 @@ class PIDFlow:
         need_force_push = False
         pr_url = ""
         message_state_hash = self.repository.state_hash(worktree_path)
+        base_refresh_count = 0
+        base_refresh_stage_counts: dict[str, int] = {}
         checks_timeout_seconds = env_int(
             "PID_CHECKS_TIMEOUT_SECONDS", self.config.workflow.checks_timeout_seconds
         )
@@ -332,8 +334,66 @@ class PIDFlow:
                 commit_title,
                 self.config.commit.automated_feedback_title,
             )
+            refresh_result, base_refresh_count = self.refresh_base_if_needed(
+                stage="before_message",
+                base_refresh_count=base_refresh_count,
+                stage_counts=base_refresh_stage_counts,
+                default_branch=default_branch,
+                original_prompt=parsed.prompt,
+                pr_title=commit_message.title,
+                pr_body=commit_message.body,
+                pr_url=pr_url or "(not opened yet)",
+                commit_title=commit_title,
+                followup_thinking_level=followup_thinking_level,
+                worktree_path=worktree_path,
+            )
+            if refresh_result in {"limit_reached", "conflict_unresolved"}:
+                echo_err(f"pid: base refresh stopped before message: {refresh_result}")
+                abort(1)
+            refreshed_before_message = refresh_result in {
+                "rebased_cleanly",
+                "rebased_with_agent_fix",
+            }
+            if refreshed_before_message:
+                need_force_push = True
+                commit_title = self.repository.commit_rebase_changes(
+                    worktree_path,
+                    commit_title,
+                    self.config.commit.rebase_feedback_title,
+                )
             current_state_hash = self.repository.state_hash(worktree_path)
-            if current_state_hash != message_state_hash:
+            if refreshed_before_message or current_state_hash != message_state_hash:
+                commit_message = self.generate_commit_message(
+                    parsed=parsed,
+                    base_rev=base_rev,
+                    worktree_path=worktree_path,
+                )
+                self.verify_commit_title(commit_message)
+                message_state_hash = self.repository.state_hash(worktree_path)
+
+            refresh_result, base_refresh_count = self.refresh_base_if_needed(
+                stage="before_pr",
+                base_refresh_count=base_refresh_count,
+                stage_counts=base_refresh_stage_counts,
+                default_branch=default_branch,
+                original_prompt=parsed.prompt,
+                pr_title=commit_message.title,
+                pr_body=commit_message.body,
+                pr_url=pr_url or "(not opened yet)",
+                commit_title=commit_title,
+                followup_thinking_level=followup_thinking_level,
+                worktree_path=worktree_path,
+            )
+            if refresh_result in {"limit_reached", "conflict_unresolved"}:
+                echo_err(f"pid: base refresh stopped before PR push: {refresh_result}")
+                abort(1)
+            if refresh_result in {"rebased_cleanly", "rebased_with_agent_fix"}:
+                need_force_push = True
+                commit_title = self.repository.commit_rebase_changes(
+                    worktree_path,
+                    commit_title,
+                    self.config.commit.rebase_feedback_title,
+                )
                 commit_message = self.generate_commit_message(
                     parsed=parsed,
                     base_rev=base_rev,
@@ -395,6 +455,50 @@ class PIDFlow:
                     attempt += 1
                     merge_retries = 0
                     continue
+
+            refresh_result, base_refresh_count = self.refresh_base_if_needed(
+                stage="after_checks",
+                base_refresh_count=base_refresh_count,
+                stage_counts=base_refresh_stage_counts,
+                default_branch=default_branch,
+                original_prompt=parsed.prompt,
+                pr_title=pr_title,
+                pr_body=commit_message.body,
+                pr_url=pr_url,
+                commit_title=commit_title,
+                followup_thinking_level=followup_thinking_level,
+                worktree_path=worktree_path,
+            )
+            if refresh_result in {"limit_reached", "conflict_unresolved"}:
+                echo_err(f"pid: base refresh stopped after checks: {refresh_result}")
+                abort(1)
+            if refresh_result in {"rebased_cleanly", "rebased_with_agent_fix"}:
+                commit_title = self.repository.commit_rebase_changes(
+                    worktree_path,
+                    commit_title,
+                    self.config.commit.rebase_feedback_title,
+                )
+                commit_message = self.generate_commit_message(
+                    parsed=parsed,
+                    base_rev=base_rev,
+                    worktree_path=worktree_path,
+                )
+                self.verify_commit_title(commit_message)
+                message_state_hash = self.repository.state_hash(worktree_path)
+                self.runner.require(
+                    [
+                        "git",
+                        "push",
+                        "--force-with-lease",
+                        "-u",
+                        "origin",
+                        parsed.branch,
+                    ],
+                    cwd=worktree_path,
+                )
+                self.forge.ensure_pr(parsed.branch, commit_message, worktree_path)
+                merge_retries = 0
+                continue
 
             pr_head_oid = ""
             if self.config.forge.merge_uses_head_oid:
@@ -461,11 +565,13 @@ class PIDFlow:
             if rebase_result.returncode != 0:
                 write_command_output(rebase_result)
                 followup_thinking_level = self.fix_rebase(
+                    original_prompt=parsed.prompt,
                     pr_title=pr_title,
+                    pr_body=commit_message.body,
                     pr_url=pr_url,
                     default_branch=default_branch,
                     commit_title=commit_title,
-                    merge_out=merge_result.stdout,
+                    merge_out=command_diagnostics(merge_result, rebase_result),
                     followup_thinking_level=followup_thinking_level,
                     worktree_path=worktree_path,
                 )
@@ -488,6 +594,80 @@ class PIDFlow:
             f"pid: exhausted {parsed.max_attempts} attempts; leaving worktree: {worktree_path}"
         )
         abort(1)
+
+    def refresh_base_if_needed(
+        self,
+        *,
+        stage: str,
+        base_refresh_count: int,
+        stage_counts: dict[str, int],
+        default_branch: str,
+        original_prompt: str,
+        pr_title: str,
+        pr_body: str,
+        pr_url: str,
+        commit_title: str,
+        followup_thinking_level: str,
+        worktree_path: str,
+    ) -> tuple[str, int]:
+        """Refresh branch base at bounded workflow checkpoints."""
+
+        if not self.config.workflow.base_refresh_enabled:
+            return "unchanged", base_refresh_count
+        if stage not in self.config.workflow.base_refresh_stages:
+            return "unchanged", base_refresh_count
+        if stage_counts.get(stage, 0) >= 1:
+            return "unchanged", base_refresh_count
+
+        self.runner.require(
+            ["git", "fetch", "origin", default_branch], cwd=worktree_path
+        )
+        if self.repository.contains_ref(worktree_path, f"origin/{default_branch}"):
+            if self.session_logger is not None:
+                self.session_logger.event(f"base refresh {stage}: unchanged")
+            return "unchanged", base_refresh_count
+        if base_refresh_count >= self.config.workflow.base_refresh_limit:
+            echo_err(
+                "pid: base refresh limit reached; leaving PR/worktree for manual refresh"
+            )
+            return "limit_reached", base_refresh_count
+
+        base_refresh_count += 1
+        stage_counts[stage] = stage_counts.get(stage, 0) + 1
+        message = (
+            f"pid: {stage} base moved; rebasing onto origin/{default_branch} "
+            f"({base_refresh_count}/{self.config.workflow.base_refresh_limit})"
+        )
+        echo_out(message)
+        if self.session_logger is not None:
+            self.session_logger.event(message)
+
+        rebase_result = self.runner.run(
+            ["git", "rebase", f"origin/{default_branch}"], cwd=worktree_path
+        )
+        if rebase_result.returncode == 0:
+            return "rebased_cleanly", base_refresh_count
+
+        write_command_output(rebase_result)
+        if not self.config.workflow.base_refresh_agent_conflict_fix:
+            echo_err("pid: base refresh rebase conflicted; leaving worktree")
+            return "conflict_unresolved", base_refresh_count
+
+        self.fix_rebase(
+            original_prompt=original_prompt,
+            pr_title=pr_title,
+            pr_body=pr_body,
+            pr_url=pr_url,
+            default_branch=default_branch,
+            commit_title=commit_title,
+            merge_out=command_diagnostic(rebase_result),
+            followup_thinking_level=followup_thinking_level,
+            worktree_path=worktree_path,
+        )
+        if self.repository.rebase_in_progress(worktree_path):
+            echo_err("pid: base refresh rebase still in progress after agent")
+            return "conflict_unresolved", base_refresh_count
+        return "rebased_with_agent_fix", base_refresh_count
 
     def fix_ci_failures(
         self,
@@ -520,7 +700,9 @@ class PIDFlow:
     def fix_rebase(
         self,
         *,
+        original_prompt: str,
         pr_title: str,
+        pr_body: str,
         pr_url: str,
         default_branch: str,
         commit_title: str,
@@ -529,7 +711,9 @@ class PIDFlow:
         worktree_path: str,
     ) -> str:
         prompt = build_rebase_fix_prompt(
+            original_prompt=original_prompt,
             pr_title=pr_title,
+            pr_body=pr_body,
             pr_url=pr_url,
             default_branch=default_branch,
             commit_title=commit_title,
@@ -748,6 +932,19 @@ class PIDFlow:
         )
         self.runner.run(["git", "-C", main_worktree, "branch", "-D", branch])
         print_merge_success(pr_title, pr_url, self.config.forge.label)
+
+
+def command_diagnostics(*results: CommandResult) -> str:
+    """Return command outputs suitable for an agent diagnostic block."""
+
+    diagnostics = [command_diagnostic(result) for result in results]
+    return "\n".join(diagnostic for diagnostic in diagnostics if diagnostic)
+
+
+def command_diagnostic(result: CommandResult) -> str:
+    if result.stdout and result.stderr and not result.stdout.endswith("\n"):
+        return f"{result.stdout}\n{result.stderr}"
+    return result.stdout + result.stderr
 
 
 def run_pid(

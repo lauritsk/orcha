@@ -25,8 +25,8 @@ cleans up the worktree.
 - Creates, updates, checks, retries, and squash-merges PRs with a configurable
   forge CLI (`gh` by default; `glab`, `tea`, or custom wrappers can be used by
   changing argument templates).
-- Handles CI failure follow-ups and moved-base rebase retries without charging
-  agent attempts.
+- Handles CI failure follow-ups, bounded default-branch refreshes, and
+  moved-base rebase retries without charging agent attempts.
 - Uses Rich output for key status panels.
 - Optionally keeps the screen awake while pid runs on macOS.
 
@@ -271,6 +271,10 @@ checks_timeout_seconds = 1800
 checks_poll_interval_seconds = 10
 merge_retry_limit = 20
 trust_mise = true
+base_refresh_enabled = true
+base_refresh_stages = ["before_pr"]
+base_refresh_limit = 3
+base_refresh_agent_conflict_fix = true
 ```
 
 `agent.command`, `forge.command`, and `commit.verifier_command` may be arrays of
@@ -296,6 +300,13 @@ not be blank strings.
 Commit verifier templates support `{title}`. Set `commit.verifier_args = []` to
 skip external title verification.
 
+Base refresh fetches `origin/<default-branch>` at configured workflow stages and
+rebases when the branch does not contain the latest default branch. Supported
+`workflow.base_refresh_stages` values are `before_message`, `before_pr`, and
+`after_checks`. Each stage refreshes at most once per run; `base_refresh_limit`
+caps total refresh rebases. When `after_checks` rebases, pid force-pushes,
+updates the PR, and waits for checks again before merging.
+
 Prompt templates must be non-blank and support these fields:
 
 | Prompt key | Fields |
@@ -303,7 +314,7 @@ Prompt templates must be non-blank and support these fields:
 | `prompts.message` | `{original_prompt}`, `{branch}`, `{base_rev}`, `{output_path}` |
 | `prompts.review` | `{original_prompt}`, `{review_target}` |
 | `prompts.ci_fix` | `{pr_title}`, `{pr_url}`, `{commit_title}`, `{checks_out}` |
-| `prompts.rebase_fix` | `{pr_title}`, `{pr_url}`, `{default_branch}`, `{commit_title}`, `{merge_out}`, `{forge_label}` |
+| `prompts.rebase_fix` | `{original_prompt}`, `{pr_title}`, `{pr_body}`, `{pr_url}`, `{default_branch}`, `{commit_title}`, `{merge_out}`, `{forge_label}` |
 
 `prompts.message` must include `{output_path}` so the agent knows where to
 write the JSON commit/PR metadata. Use doubled braces (`{{` and `}}`) for

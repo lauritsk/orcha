@@ -22,16 +22,23 @@ postinstall = "hk install --mise"
 description = "Run orcha with uv"
 run = "uv run orcha"
 
+[tasks.install]
+description = "Install project dependencies"
+run = "uv sync --locked --dev"
+
 [tasks.fix]
 description = "Run hk-managed fixers across the repository"
+depends = ["install"]
 run = "hk fix --all"
 
 [tasks.lint]
 description = "Run hk-managed checks across the repository"
-run = "uv sync --locked --all-groups && hk check --all"
+depends = ["install"]
+run = "hk check --all"
 
 [tasks.test]
 description = "Run test suite"
+depends = ["install"]
 run = "uv run pytest"
 
 [tasks.build]

@@ -74,13 +74,13 @@ def test_session_log_captures_agent_steps_commands_and_outputs(tmp_path: Path) -
     assert len(logs) == 1
     log = logs[0].read_text()
     assert "SESSION START" in log
-    assert "STEP START: pi initial agent" in log
+    assert "STEP START: agent initial" in log
     assert "COMMAND STDOUT" in log
     assert "agent did work" in log
-    assert "STEP PASS: pi initial agent" in log
-    assert "STEP START: pi review agent" in log
+    assert "STEP PASS: agent initial" in log
+    assert "STEP START: agent review" in log
     assert "review agent output" in log
-    assert "STEP START: pi message" in log
+    assert "STEP START: agent message" in log
     assert "$ cog verify 'feat: cool stuff'" in log
     assert "cog verified" in log
     assert "github squash merged: feat: cool stuff" in log

@@ -1,4 +1,4 @@
-"""Prompt builders for Orcha's pi follow-up tasks."""
+"""Prompt builders for Orcha's agent follow-up tasks."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ DIAGNOSTIC_OUTPUT_LIMIT = 20_000
 def build_message_prompt(
     *, original_prompt: str, branch: str, base_rev: str, output_path: str
 ) -> str:
-    """Build a prompt that asks pi to write commit/PR metadata JSON."""
+    """Build a prompt that asks the agent to write commit/PR metadata JSON."""
 
     return (
         "Write commit and pull request metadata for the completed work in this "
@@ -34,7 +34,7 @@ def build_message_prompt(
 
 
 def build_review_prompt(*, original_prompt: str, review_target: str) -> str:
-    """Build the high-thinking review pass prompt."""
+    """Build the review pass prompt."""
 
     return (
         "Review the work for this original request and fix anything incomplete, "

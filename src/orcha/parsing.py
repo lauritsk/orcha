@@ -4,16 +4,22 @@ from __future__ import annotations
 
 import re
 
+from orcha.config import DEFAULT_THINKING_LEVELS
 from orcha.errors import abort
 from orcha.models import ParsedArgs
 from orcha.output import echo_err, echo_out
 
 USAGE = "usage: orcha [session] [ATTEMPTS] [THINKING] BRANCH [PROMPT...]"
 SESSION_USAGE = "usage: orcha session [ATTEMPTS] [THINKING] BRANCH [PROMPT...]"
-THINKING_LEVELS = ("low", "medium", "high", "xhigh")
+THINKING_LEVELS = DEFAULT_THINKING_LEVELS
 
 
-def parse_args(argv: list[str]) -> ParsedArgs:
+def parse_args(
+    argv: list[str],
+    *,
+    default_thinking: str = "medium",
+    thinking_levels: tuple[str, ...] = THINKING_LEVELS,
+) -> ParsedArgs:
     """Parse Orcha's fish-compatible positional argument format."""
 
     if not argv or argv[0] in {"--help", "-h"}:
@@ -40,8 +46,8 @@ def parse_args(argv: list[str]) -> ParsedArgs:
             abort(2)
         max_attempts = int(attempts)
 
-    thinking_level = "medium"
-    if args and args[0] in THINKING_LEVELS:
+    thinking_level = default_thinking
+    if args and args[0] in thinking_levels:
         thinking_level = args.pop(0)
 
     if not args:
@@ -57,11 +63,11 @@ def parse_args(argv: list[str]) -> ParsedArgs:
         abort(2)
     interactive_prompt = prompt if interactive and prompt else None
     if not prompt and not interactive:
-        echo_err("orcha: prompt required for non-interactive pi -p flow")
+        echo_err("orcha: prompt required for non-interactive agent flow")
         echo_err(usage)
         abort(2)
     if not prompt:
-        prompt = "Interactive pi session."
+        prompt = "Interactive agent session."
 
     return ParsedArgs(
         max_attempts,
@@ -73,13 +79,15 @@ def parse_args(argv: list[str]) -> ParsedArgs:
     )
 
 
-def bump_thinking(level: str) -> str:
-    """Return the next supported pi thinking level, or the input when at max."""
+def bump_thinking(
+    level: str, thinking_levels: tuple[str, ...] = THINKING_LEVELS
+) -> str:
+    """Return the next supported thinking level, or input when at max."""
 
     try:
-        index = THINKING_LEVELS.index(level)
+        index = thinking_levels.index(level)
     except ValueError:
         return level
-    if index >= len(THINKING_LEVELS) - 1:
+    if index >= len(thinking_levels) - 1:
         return level
-    return THINKING_LEVELS[index + 1]
+    return thinking_levels[index + 1]

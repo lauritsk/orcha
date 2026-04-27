@@ -17,6 +17,7 @@
 - [x] Refactor Python project structure
 - [x] Add plumbum command execution dependency
 - [x] Add docs update enforcement to review agent
+- [x] Add configurable agent harness
 - [ ] Add higher-level orchestrator agent (see `ORCHESTRATOR_AGENT_PLAN.md`)
 - [x] Fix PR merge attempts counting only review rejects
 - [x] Fix thinking bump on rebase conflict-only failures

@@ -93,7 +93,7 @@ def test_generated_commit_title_is_validated_with_cog(tmp_path: Path) -> None:
     [
         ({"repo_root_fail": True}, ("git",), "not inside a git repository", 1),
         ({}, ("git",), "cog is required", 1),
-        ({}, ("git", "cog"), "pi is required", 1),
+        ({}, ("git", "cog"), "agent command is required: pi", 1),
         ({}, ("git", "cog", "pi"), "gh is required", 1),
     ],
 )
@@ -275,7 +275,7 @@ def test_mise_is_optional_when_not_on_path(tmp_path: Path) -> None:
     )
 
     assert_success(process)
-    assert "no changes or commits after pi" in process.stdout
+    assert "no changes or commits after agent" in process.stdout
     assert not calls(final_state, "mise")
 
 
@@ -287,7 +287,7 @@ def test_initial_pi_failure_stops_before_review(tmp_path: Path) -> None:
     )
 
     assert process.returncode == 13
-    assert "pi exited with status 13" in process.stderr
+    assert "agent exited with status 13" in process.stderr
     assert [call["kind"] for call in final_state["pi_calls"]] == ["initial"]
     assert final_state["pi_calls"][0]["thinking"] == "low"
 
@@ -302,8 +302,8 @@ def test_session_mode_runs_interactive_pi_then_resumes_flow(tmp_path: Path) -> N
     )
 
     assert_success(process)
-    assert "launching interactive pi session" in process.stdout
-    assert "interactive pi session exited; resuming review/PR flow" in process.stdout
+    assert "launching interactive agent session" in process.stdout
+    assert "interactive agent session exited; resuming review/PR flow" in process.stdout
     assert "orcha: PR attempt 1/2" in process.stdout
     initial_call = final_state["pi_calls"][0]
     assert initial_call["kind"] == "initial"
@@ -326,7 +326,7 @@ def test_session_mode_allows_no_initial_prompt(tmp_path: Path) -> None:
     review_call = final_state["pi_calls"][1]
     assert initial_call["interactive"] is True
     assert initial_call["prompt"] == ""
-    assert "Original request: Interactive pi session." in review_call["prompt"]
+    assert "Original request: Interactive agent session." in review_call["prompt"]
 
 
 def test_session_pi_failure_stops_before_review(tmp_path: Path) -> None:
@@ -337,7 +337,7 @@ def test_session_pi_failure_stops_before_review(tmp_path: Path) -> None:
     )
 
     assert process.returncode == 13
-    assert "pi exited with status 13" in process.stderr
+    assert "agent exited with status 13" in process.stderr
     assert [call["kind"] for call in final_state["pi_calls"]] == ["initial"]
     assert final_state["pi_calls"][0]["interactive"] is True
 
@@ -398,7 +398,7 @@ def test_no_changes_after_review_stops_before_pr(tmp_path: Path) -> None:
     )
 
     assert_success(process)
-    assert "no changes or commits after pi" in process.stdout
+    assert "no changes or commits after agent" in process.stdout
     assert not calls(final_state, "gh", "pr", "create")
 
 
@@ -451,7 +451,7 @@ def test_dirty_work_is_committed_then_pr_created_and_merged(tmp_path: Path) -> N
         ({"message_skip_output": True}, "did not write commit metadata"),
         ({"message_json": "not json"}, "not valid JSON"),
         ({"message_json": '{"title":"feat: ok","body":""}'}, "body is empty"),
-        ({"message_agent_changes": True}, "pi message changed the worktree"),
+        ({"message_agent_changes": True}, "agent message changed the worktree"),
         ({"cog_fail": True, "cog_status": 7}, "bad conventional commit"),
     ],
 )
@@ -468,6 +468,40 @@ def test_message_generation_failures_stop_before_commit(
     assert message in combined_output(process)
     assert not final_state.get("commit_messages")
     assert not calls(final_state, "gh", "pr", "create")
+
+
+def test_configured_agent_command_is_used_via_config_option(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        """
+[agent]
+command = ["agentx"]
+non_interactive_args = ["run", "--mode", "{thinking}", "--message", "{prompt}"]
+default_thinking = "normal"
+review_thinking = "deep"
+thinking_levels = ["normal", "deep", "max"]
+label = "agentx"
+""".strip()
+    )
+    state = base_state(tmp_path, worktree_dirty="", worktree_diff="")
+
+    process, final_state = run_orcha(
+        tmp_path,
+        ["--config", str(config_path), "feature/cool-stuff", "build", "thing"],
+        state=state,
+        commands=("git", "cog", "agentx", "gh", "mise"),
+    )
+
+    assert_success(process)
+    agent_calls = calls(final_state, "agentx")
+    assert agent_calls[0]["args"] == [
+        "run",
+        "--mode",
+        "normal",
+        "--message",
+        "build thing",
+    ]
+    assert agent_calls[1]["args"][:3] == ["run", "--mode", "deep"]
 
 
 def test_prompt_preserves_unknown_option_like_words(tmp_path: Path) -> None:
@@ -592,10 +626,10 @@ def test_first_ci_followup_keeps_thinking_after_review_changes(
     assert "unit tests failed" in ci_fix_calls[0]["prompt"]
     assert "fix: address automated feedback" in final_state["commit_messages"]
     assert (
-        "review changed first pass; follow-up pi will keep thinking medium"
+        "review changed first pass; follow-up agent will keep thinking medium"
         in process.stdout
     )
-    assert "next pi thinking bumped to high" in process.stdout
+    assert "next agent thinking bumped to high" in process.stdout
     assert "orcha: PR attempt 2/3" in process.stdout
 
 
@@ -679,7 +713,7 @@ def test_ci_followup_pi_failure_returns_pi_status(tmp_path: Path) -> None:
     process, _ = run_orcha(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
 
     assert process.returncode == 19
-    assert "pi exited with status 19 while fixing CI" in process.stderr
+    assert "agent exited with status 19 while fixing CI" in process.stderr
 
 
 def test_pending_checks_time_out_and_fail_on_last_attempt(tmp_path: Path) -> None:
@@ -807,7 +841,7 @@ def test_rebase_conflict_after_review_changes_does_not_bump_thinking(
         call for call in final_state["pi_calls"] if call["kind"] == "rebase_fix"
     ]
     assert [call["thinking"] for call in rebase_calls] == ["low"]
-    assert "next pi thinking bumped" not in process.stdout
+    assert "next agent thinking bumped" not in process.stdout
 
 
 def test_rebase_still_in_progress_after_pi_stops(tmp_path: Path) -> None:
@@ -824,7 +858,7 @@ def test_rebase_still_in_progress_after_pi_stops(tmp_path: Path) -> None:
     process, _ = run_orcha(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
 
     assert process.returncode == 1
-    assert "rebase still in progress after pi" in process.stderr
+    assert "rebase still in progress after agent" in process.stderr
 
 
 def test_merge_failure_but_github_reports_merged_cleans_up(tmp_path: Path) -> None:
@@ -918,4 +952,4 @@ def test_rebase_pi_failure_returns_pi_status(tmp_path: Path) -> None:
     process, _ = run_orcha(tmp_path, ["feature/cool-stuff", "prompt"], state=state)
 
     assert process.returncode == 23
-    assert "pi exited with status 23 while resolving rebase" in process.stderr
+    assert "agent exited with status 23 while resolving rebase" in process.stderr

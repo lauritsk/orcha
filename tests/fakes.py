@@ -338,16 +338,25 @@ def cmd_gh(state, args):
 
 
 def prompt_from_args(args):
-    if "-p" in args:
-        return args[args.index("-p") + 1]
+    for flag in ("-p", "--prompt", "--message"):
+        if flag in args:
+            return args[args.index(flag) + 1]
 
     messages = []
     skip_next = False
+    value_flags = {
+        "--thinking",
+        "--mode",
+        "--model-reasoning-effort",
+        "--model",
+        "--provider",
+        "--session",
+    }
     for arg in args:
         if skip_next:
             skip_next = False
             continue
-        if arg in {"--thinking", "--model", "--provider", "--session"}:
+        if arg in value_flags:
             skip_next = True
             continue
         if arg.startswith("-"):
@@ -357,8 +366,9 @@ def prompt_from_args(args):
 
 
 def thinking_from_args(args):
-    if "--thinking" in args:
-        return args[args.index("--thinking") + 1]
+    for flag in ("--thinking", "--mode", "--model-reasoning-effort"):
+        if flag in args:
+            return args[args.index(flag) + 1]
     return ""
 
 
@@ -460,6 +470,7 @@ def main():
         "cog": cmd_cog,
         "gh": cmd_gh,
         "pi": cmd_pi,
+        "agentx": cmd_pi,
         "mise": cmd_mise,
     }
     if cmd not in dispatch:
@@ -541,6 +552,8 @@ def run_orcha(
             "TERM": "dumb",
             "NO_COLOR": "1",
             "PYTHONPATH": str(SRC),
+            "HOME": str(tmp_path / "home"),
+            "XDG_CONFIG_HOME": str(tmp_path / "xdg-config"),
             "ORCHA_CHECKS_TIMEOUT_SECONDS": str(
                 state.get("checks_timeout_seconds", 1800)
             ),

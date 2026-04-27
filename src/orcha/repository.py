@@ -188,7 +188,7 @@ class Repository:
     def commit_initial_changes(
         self, base_rev: str, worktree_path: str, commit_message: CommitMessage
     ) -> None:
-        """Commit reviewed pi output as one generated-message commit."""
+        """Commit reviewed agent output as one generated-message commit."""
 
         commit_count = self.count_commits(base_rev, worktree_path)
         dirty = self.output(
@@ -196,7 +196,7 @@ class Repository:
         )
 
         if commit_count == 0 and not has_output(dirty):
-            echo_out("orcha: no changes or commits after pi; stopping before PR")
+            echo_out("orcha: no changes or commits after agent; stopping before PR")
             abort(0)
 
         if commit_count > 0:

@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from orcha.commands import CommandRunner, require_command
+from orcha.config import OrchaConfig
 from orcha.errors import OrchaAbort, abort
 from orcha.github import GitHub
 from orcha.messages import parse_commit_message
@@ -35,8 +36,11 @@ from orcha.utils import env_int, has_output, review_target_for, worktree_path_fo
 class OrchaFlow:
     """Implements the Orcha orchestration lifecycle."""
 
-    def __init__(self, runner: CommandRunner | None = None) -> None:
+    def __init__(
+        self, runner: CommandRunner | None = None, config: OrchaConfig | None = None
+    ) -> None:
         self.runner = runner or CommandRunner()
+        self.config = config or OrchaConfig()
         self.repository = Repository(self.runner)
         self.github = GitHub(self.runner)
         self.review_rejected_first_pass = False
@@ -64,7 +68,11 @@ class OrchaFlow:
         return exit_code
 
     def _run(self, argv: list[str]) -> None:
-        parsed = parse_args(argv)
+        parsed = parse_args(
+            argv,
+            default_thinking=self.config.agent.default_thinking,
+            thinking_levels=self.config.agent.thinking_levels,
+        )
         self.start_session_logging(argv)
         self.log_parsed_args(parsed)
         followup_thinking_level = parsed.thinking_level
@@ -104,18 +112,18 @@ class OrchaFlow:
             self.runner.require(["mise", "trust", "."], cwd=worktree_path)
 
         if parsed.interactive:
-            self.run_pi_session(
+            self.run_agent_session(
                 parsed.interactive_prompt,
                 cwd=worktree_path,
                 thinking_level=parsed.thinking_level,
             )
         else:
-            self.run_pi_prompt(
+            self.run_agent_prompt(
                 parsed.prompt,
                 cwd=worktree_path,
                 thinking_level=parsed.thinking_level,
                 failure_context="stopping before review/commit/PR",
-                step_label="pi initial agent",
+                step_label=f"{self.config.agent.label} initial",
             )
 
         initial_commit_count = self.repository.count_commits(base_rev, worktree_path)
@@ -131,21 +139,21 @@ class OrchaFlow:
             original_prompt=parsed.prompt,
             review_target=review_target,
         )
-        self.run_pi_prompt(
+        self.run_agent_prompt(
             review_prompt,
             cwd=worktree_path,
-            thinking_level="high",
+            thinking_level=self.config.agent.review_thinking,
             failure_context="stopping before commit/PR",
-            label="pi review",
-            step_label="pi review agent",
+            label=f"{self.config.agent.label} review",
+            step_label=f"{self.config.agent.label} review",
         )
 
         post_review_state_hash = self.repository.state_hash(worktree_path)
         if pre_review_state_hash != post_review_state_hash:
             self.review_rejected_first_pass = True
             echo_out(
-                "orcha: review changed first pass; follow-up pi will keep "
-                f"thinking {followup_thinking_level}"
+                "orcha: review changed first pass; follow-up "
+                f"{self.config.agent.label} will keep thinking {followup_thinking_level}"
             )
 
         post_review_commit_count = self.repository.count_commits(
@@ -155,7 +163,7 @@ class OrchaFlow:
             ["status", "--porcelain", "--untracked-files=all"], cwd=worktree_path
         )
         if post_review_commit_count == 0 and not has_output(post_review_dirty):
-            echo_out("orcha: no changes or commits after pi; stopping before PR")
+            echo_out("orcha: no changes or commits after agent; stopping before PR")
             abort(0)
 
         commit_message = self.generate_commit_message(
@@ -209,7 +217,7 @@ class OrchaFlow:
     def generate_commit_message(
         self, *, parsed: ParsedArgs, base_rev: str, worktree_path: str
     ) -> CommitMessage:
-        """Ask pi to write validated commit/PR metadata without changing worktree."""
+        """Ask the agent to write validated commit/PR metadata."""
 
         git_dir = self.repository.output(
             ["rev-parse", "--path-format=absolute", "--git-dir"], cwd=worktree_path
@@ -218,7 +226,7 @@ class OrchaFlow:
         output_path.unlink(missing_ok=True)
         pre_message_state_hash = self.repository.state_hash(worktree_path)
 
-        self.run_pi_prompt(
+        self.run_agent_prompt(
             build_message_prompt(
                 original_prompt=parsed.prompt,
                 branch=parsed.branch,
@@ -226,28 +234,31 @@ class OrchaFlow:
                 output_path=str(output_path),
             ),
             cwd=worktree_path,
-            thinking_level="high",
+            thinking_level=self.config.agent.review_thinking,
             failure_context="stopping before commit/PR",
-            label="pi message",
+            label=f"{self.config.agent.label} message",
         )
 
         post_message_state_hash = self.repository.state_hash(worktree_path)
         if pre_message_state_hash != post_message_state_hash:
             echo_err(
-                "orcha: pi message changed the worktree; stopping before commit/PR"
+                "orcha: agent message changed the worktree; stopping before commit/PR"
             )
             abort(1)
         if not output_path.exists():
-            echo_err("orcha: pi message did not write commit metadata")
+            echo_err("orcha: agent message did not write commit metadata")
             abort(1)
 
-        return parse_commit_message(output_path.read_text())
+        return parse_commit_message(output_path.read_text(encoding="utf-8"))
 
     def require_external_commands(self) -> None:
         """Ensure external CLIs needed for the orchestration flow exist."""
 
         require_command("cog", "orcha: cog is required for commit message verification")
-        require_command("pi", "orcha: pi is required")
+        require_command(
+            self.config.agent.executable,
+            f"orcha: agent command is required: {self.config.agent.executable}",
+        )
         require_command("gh", "orcha: gh is required for PR creation")
 
     def run_pr_loop(
@@ -413,7 +424,8 @@ class OrchaFlow:
 
             if self.repository.rebase_in_progress(worktree_path):
                 echo_err(
-                    f"orcha: rebase still in progress after pi; leaving PR open: {pr_url}"
+                    "orcha: rebase still in progress after agent; "
+                    f"leaving PR open: {pr_url}"
                 )
                 abort(1)
 
@@ -443,12 +455,12 @@ class OrchaFlow:
             commit_title=commit_title,
             checks_out=checks_out,
         )
-        self.run_pi_prompt(
+        self.run_agent_prompt(
             prompt,
             cwd=worktree_path,
             thinking_level=followup_thinking_level,
             failure_context="while fixing CI",
-            step_label="pi CI fix agent",
+            step_label=f"{self.config.agent.label} CI fix",
         )
 
         return self.bump_after_review_rejected_followup(followup_thinking_level)
@@ -471,12 +483,12 @@ class OrchaFlow:
             commit_title=commit_title,
             merge_out=merge_out,
         )
-        self.run_pi_prompt(
+        self.run_agent_prompt(
             prompt,
             cwd=worktree_path,
             thinking_level=followup_thinking_level,
             failure_context="while resolving rebase",
-            step_label="pi rebase fix agent",
+            step_label=f"{self.config.agent.label} rebase fix",
         )
 
         return followup_thinking_level
@@ -519,95 +531,96 @@ class OrchaFlow:
             write_collected(cog_result.stdout, stream=sys.stderr)
             abort(cog_result.returncode)
 
-    def run_pi_session(
+    def run_agent_session(
         self,
         prompt: str | None,
         *,
         cwd: str,
         thinking_level: str,
     ) -> None:
-        """Run interactive pi in the worktree, then return to Orcha."""
+        """Run the configured agent interactively, then return to Orcha."""
 
-        pi_args = ["pi"]
-        if thinking_level:
-            pi_args.extend(["--thinking", thinking_level])
-        if prompt:
-            pi_args.append(prompt)
-
-        log_step = "pi interactive session"
+        agent_args = self.config.agent.interactive_command(
+            prompt=prompt, thinking=thinking_level
+        )
+        log_step = f"{self.config.agent.label} interactive session"
         if self.session_logger is not None:
             self.session_logger.step_start(log_step, cwd=cwd)
             self.session_logger.event(
-                f"pi thinking level: {thinking_level or '(default)'}"
+                f"{self.config.agent.label} thinking level: "
+                f"{thinking_level or '(default)'}"
             )
 
         echo_out(
-            "orcha: launching interactive pi session; exit pi to resume review/PR flow"
+            "orcha: launching interactive agent session; "
+            "exit agent to resume review/PR flow"
         )
-        pi_result = self.runner.run_interactive(pi_args, cwd=cwd)
-        if pi_result.returncode == 0:
+        agent_result = self.runner.run_interactive(agent_args, cwd=cwd)
+        if agent_result.returncode == 0:
             if self.session_logger is not None:
                 self.session_logger.step_pass(log_step)
-            echo_out("orcha: interactive pi session exited; resuming review/PR flow")
+            echo_out("orcha: interactive agent session exited; resuming review/PR flow")
             return
 
         if self.session_logger is not None:
-            self.session_logger.step_fail(log_step, pi_result.returncode)
-        write_command_output(pi_result)
+            self.session_logger.step_fail(log_step, agent_result.returncode)
+        write_command_output(agent_result)
         echo_err(
-            f"orcha: pi exited with status {pi_result.returncode}; "
-            "stopping before review/commit/PR"
+            f"orcha: {self.config.agent.label} exited with status "
+            f"{agent_result.returncode}; stopping before review/commit/PR"
         )
-        abort(pi_result.returncode)
+        abort(agent_result.returncode)
 
-    def run_pi_prompt(
+    def run_agent_prompt(
         self,
         prompt: str,
         *,
         cwd: str,
         thinking_level: str,
         failure_context: str,
-        label: str = "pi",
+        label: str | None = None,
         step_label: str | None = None,
     ) -> None:
-        """Run pi with a prompt, preserving Orcha's failure handling."""
+        """Run configured agent with a prompt, preserving failure handling."""
 
-        pi_args = ["pi"]
-        if thinking_level:
-            pi_args.extend(["--thinking", thinking_level])
-        pi_args.extend(["-p", prompt])
-
-        log_step = step_label or label
+        agent_args = self.config.agent.non_interactive_command(
+            prompt=prompt, thinking=thinking_level
+        )
+        display_label = label or self.config.agent.label
+        log_step = step_label or display_label
         if self.session_logger is not None:
             self.session_logger.step_start(log_step, cwd=cwd)
             self.session_logger.event(
-                f"pi thinking level: {thinking_level or '(default)'}"
+                f"{self.config.agent.label} thinking level: "
+                f"{thinking_level or '(default)'}"
             )
 
-        pi_result = self.runner.run(pi_args, cwd=cwd)
-        if pi_result.returncode == 0:
+        agent_result = self.runner.run(agent_args, cwd=cwd)
+        if agent_result.returncode == 0:
             if self.session_logger is not None:
                 self.session_logger.step_pass(log_step)
             return
 
         if self.session_logger is not None:
-            self.session_logger.step_fail(log_step, pi_result.returncode)
-        write_command_output(pi_result)
+            self.session_logger.step_fail(log_step, agent_result.returncode)
+        write_command_output(agent_result)
         separator = " " if failure_context.startswith("while ") else "; "
         echo_err(
-            f"orcha: {label} exited with status {pi_result.returncode}"
-            f"{separator}{failure_context}"
+            f"orcha: {display_label} exited with status "
+            f"{agent_result.returncode}{separator}{failure_context}"
         )
-        abort(pi_result.returncode)
+        abort(agent_result.returncode)
 
     def bump_after_review_rejected_followup(self, followup_thinking_level: str) -> str:
         if not self.review_rejected_first_pass or not followup_thinking_level:
             return followup_thinking_level
-        bumped_level = bump_thinking(followup_thinking_level)
+        bumped_level = bump_thinking(
+            followup_thinking_level, self.config.agent.thinking_levels
+        )
         if bumped_level != followup_thinking_level:
             echo_out(
-                "orcha: review-rejected follow-up completed; next pi thinking bumped to "
-                f"{bumped_level}"
+                "orcha: review-rejected follow-up completed; next "
+                f"{self.config.agent.label} thinking bumped to {bumped_level}"
             )
         return bumped_level
 
@@ -667,7 +680,7 @@ class OrchaFlow:
         print_merge_success(pr_title, pr_url)
 
 
-def run_orcha(argv: list[str]) -> int:
+def run_orcha(argv: list[str], *, config: OrchaConfig | None = None) -> int:
     """Run the orcha flow and return a process exit code."""
 
-    return OrchaFlow().run(argv)
+    return OrchaFlow(config=config).run(argv)

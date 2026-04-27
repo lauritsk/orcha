@@ -33,7 +33,7 @@ def worktree_path_for(repo_root: str, branch: str) -> str:
 
 
 def review_target_for(base_rev: str, commit_count: int, dirty: bool) -> str:
-    """Describe what the review pi pass should inspect."""
+    """Describe what the review agent pass should inspect."""
 
     if commit_count > 0 and dirty:
         return (

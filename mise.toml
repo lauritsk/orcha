@@ -54,7 +54,9 @@ description = "Run project checks"
 depends = ["lint", "test", "build", "audit"]
 
 [tasks.version]
+description = "Bump project version from conventional commits"
 run = "cog bump --auto"
 
 [tasks.release]
+description = "Publish a clean release with GoReleaser"
 run = "goreleaser release --clean"

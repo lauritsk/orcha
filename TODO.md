@@ -8,3 +8,4 @@
 - [x] Add docs when requested
 - [x] Use Typer-native CLI handling
 - [x] Add Rich visual output to CLI
+- [x] Refactor Python project structure

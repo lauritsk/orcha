@@ -116,3 +116,14 @@ mise run check
 ```
 
 Use `mise run fix` to run hk-managed formatters and fixers.
+
+### Project layout
+
+- `src/orcha/cli.py` owns Typer command-line wiring.
+- `src/orcha/workflow.py` coordinates the high-level Orcha lifecycle.
+- `src/orcha/repository.py` wraps git, worktree, and commit operations.
+- `src/orcha/github.py` wraps GitHub CLI pull request operations.
+- `src/orcha/prompts.py` builds pi prompts and isolates untrusted output.
+- `src/orcha/commands.py`, `output.py`, `parsing.py`, `utils.py`,
+  `models.py`, and `errors.py` contain shared support code.
+- `tests/fakes.py` provides the fake command harness for flow tests.

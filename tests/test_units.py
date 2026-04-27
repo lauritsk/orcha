@@ -17,8 +17,8 @@ import pid.cli as cli_module
 from pid.commands import CommandRunner, require_command
 from pid.config import AgentConfig, PIDConfig, load_config, parse_config
 from pid.errors import PIDAbort
-from pid.models import CommandResult
 from pid.interactive import resolve_interactive_args
+from pid.models import CommandResult, OutputMode
 from pid.output import (
     get_session_logger,
     set_session_logger,
@@ -200,6 +200,23 @@ def test_command_runner_quiet_output_suppresses_error(
     assert capsys.readouterr().err == ""
 
 
+def test_command_runner_all_output_mode_echoes_successful_output(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    result = CommandRunner(output_mode=OutputMode.ALL).run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; print('out'); print('err', file=sys.stderr)",
+        ]
+    )
+
+    assert result == CommandResult(0, "out\n", "err\n")
+    captured = capsys.readouterr()
+    assert captured.out == "out\n"
+    assert captured.err == "err\n"
+
+
 def test_command_runner_run_interactive_missing_command() -> None:
     result = CommandRunner().run_interactive(["definitely-missing-pid-command"])
 
@@ -358,8 +375,11 @@ def test_main_resolves_interactive_args_when_stdin_is_tty(
         calls.append(("resolve", argv))
         return ["resolved-branch", "resolved prompt"]
 
-    def fake_run_pid(argv: list[str], *, config: PIDConfig) -> int:
+    def fake_run_pid(
+        argv: list[str], *, config: PIDConfig, output_mode: OutputMode
+    ) -> int:
         assert config is loaded_config
+        assert output_mode == OutputMode.NORMAL
         calls.append(("run", argv))
         return 7
 

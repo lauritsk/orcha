@@ -67,8 +67,8 @@ mise run test
 
 ```sh
 pid
-pid [ATTEMPTS] [THINKING] BRANCH PROMPT...
-pid session [ATTEMPTS] [THINKING] BRANCH [PROMPT...]
+pid [--output normal|agent|all] [ATTEMPTS] [THINKING] BRANCH PROMPT...
+pid [--output normal|agent|all] session [ATTEMPTS] [THINKING] BRANCH [PROMPT...]
 pid sessions [--all|-a]
 pid config show|default|path
 pid --version
@@ -83,6 +83,12 @@ Arguments:
 | `THINKING` | `medium` | Initial agent thinking level. Values come from `agent.thinking_levels`. |
 | `BRANCH` | required | New branch name to create. Must not already exist locally or on `origin`. |
 | `PROMPT...` | required for non-interactive; optional for `session` | Prompt passed through the configured non-interactive agent template, or initial message for interactive mode. |
+
+Options:
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `--output normal\|agent\|all` | `normal` | Console detail level. `normal` shows progress, successful agent stdout summaries, and failures. `agent` also shows successful agent stderr. `all` shows successful output from every captured command. Full command logs are always written to the session log. |
 
 Examples:
 
@@ -137,6 +143,7 @@ Inspection commands and options:
 3. Creates a sibling worktree for the new branch.
 4. Runs the configured non-interactive agent command with prompt and thinking
    level, or runs the configured interactive agent command in `session` mode.
+   Successful non-interactive agent stdout is shown as the agent summary.
 5. In `session` mode, waits until the interactive agent exits.
 6. Runs a configured review-thinking agent review pass over committed and
    uncommitted work that fixes incomplete, unsafe, incorrect, untested, or

@@ -13,6 +13,7 @@ from pid.config import PIDConfig, init_config, load_config
 from pid.diagnostics import active_sessions_table, config_to_toml, print_config_metadata
 from pid.errors import PIDAbort
 from pid.interactive import resolve_interactive_args
+from pid.models import OutputMode
 from pid.output import echo_err, echo_out
 from pid.workflow import run_pid
 
@@ -52,6 +53,14 @@ def main(
             resolve_path=True,
         ),
     ] = None,
+    output: Annotated[
+        OutputMode,
+        typer.Option(
+            "--output",
+            help="Console detail: normal, agent, or all.",
+            case_sensitive=False,
+        ),
+    ] = OutputMode.NORMAL,
     version: Annotated[
         bool,
         typer.Option(
@@ -126,7 +135,7 @@ def main(
     except PIDAbort as error:
         raise typer.Exit(error.code) from error
 
-    raise typer.Exit(run_pid(resolved_args, config=loaded_config))
+    raise typer.Exit(run_pid(resolved_args, config=loaded_config, output_mode=output))
 
 
 def _run_info_command(raw_args: list[str], *, config_path: Path | None) -> int | None:

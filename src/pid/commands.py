@@ -12,7 +12,7 @@ from plumbum import local
 from plumbum.commands.processes import CommandNotFound
 
 from pid.errors import abort
-from pid.models import CommandResult
+from pid.models import CommandResult, OutputMode
 from pid.output import echo_err, write_command_output
 from pid.session_logging import SessionLogger
 
@@ -20,13 +20,28 @@ from pid.session_logging import SessionLogger
 class CommandRunner:
     """Small plumbum wrapper preserving command output behavior."""
 
-    def __init__(self, logger: SessionLogger | None = None) -> None:
+    def __init__(
+        self,
+        logger: SessionLogger | None = None,
+        output_mode: OutputMode = OutputMode.NORMAL,
+    ) -> None:
         self.logger = logger
+        self.output_mode = output_mode
 
     def set_logger(self, logger: SessionLogger | None) -> None:
         """Attach the active session logger."""
 
         self.logger = logger
+
+    def set_output_mode(self, output_mode: OutputMode) -> None:
+        """Set console output detail level."""
+
+        self.output_mode = output_mode
+
+    def writes_success_output(self) -> bool:
+        """Return true when successful command output is echoed immediately."""
+
+        return self.output_mode == OutputMode.ALL
 
     def run(
         self,
@@ -70,6 +85,8 @@ class CommandRunner:
 
         if command_log is not None and self.logger is not None:
             self.logger.command_result(command_log, result)
+        if self.writes_success_output() and result.returncode == 0:
+            write_command_output(result)
         return result
 
     def run_interactive(

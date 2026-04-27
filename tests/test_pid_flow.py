@@ -5,6 +5,8 @@ from typing import Any
 
 import pytest
 
+import pid.keepawake as keepawake_module
+from pid.errors import PIDAbort
 from tests.fakes import (
     assert_success,
     base_state,
@@ -67,6 +69,97 @@ def test_invalid_branch_name_stops_before_repo_setup(tmp_path: Path) -> None:
     assert "pid: invalid branch name: bad branch" in process.stderr
     assert calls(final_state, "git", "check-ref-format")
     assert not calls(final_state, "git", "rev-parse", "--show-toplevel")
+
+
+def test_keep_screen_awake_starts_caffeinate_on_macos(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    popen_calls: list[list[str]] = []
+
+    class FakeProcess:
+        terminated = False
+        killed = False
+
+        def poll(self) -> None:
+            return None
+
+        def terminate(self) -> None:
+            self.terminated = True
+
+        def wait(self, timeout: int | None = None) -> None:
+            return None
+
+        def kill(self) -> None:
+            self.killed = True
+
+    fake_process = FakeProcess()
+
+    def fake_popen(args: list[str], **_kwargs: object) -> FakeProcess:
+        popen_calls.append(args)
+        return fake_process
+
+    monkeypatch.setattr(keepawake_module.sys, "platform", "darwin")
+    monkeypatch.setattr(keepawake_module.shutil, "which", lambda command: command)
+    monkeypatch.setattr(keepawake_module.subprocess, "Popen", fake_popen)
+
+    guard = keepawake_module.KeepAwake(enabled=True)
+    guard.start()
+    guard.stop()
+
+    assert popen_calls == [["caffeinate", "-d", "-i"]]
+    assert fake_process.terminated is True
+    assert "keeping screen awake with caffeinate" in capsys.readouterr().out
+
+
+def test_keep_screen_awake_reports_caffeinate_launch_failure(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def fake_popen(_args: list[str], **_kwargs: object) -> None:
+        raise OSError("boom")
+
+    monkeypatch.setattr(keepawake_module.sys, "platform", "darwin")
+    monkeypatch.setattr(keepawake_module.shutil, "which", lambda command: command)
+    monkeypatch.setattr(keepawake_module.subprocess, "Popen", fake_popen)
+
+    guard = keepawake_module.KeepAwake(enabled=True)
+    with pytest.raises(PIDAbort) as exc_info:
+        guard.start()
+
+    assert exc_info.value.code == 2
+    assert "could not start caffeinate: boom" in capsys.readouterr().err
+
+
+def test_keep_screen_awake_rejects_unsupported_linux(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(keepawake_module.sys, "platform", "linux")
+    config_path = tmp_path / "config.toml"
+    config_path.write_text("[runtime]\nkeep_screen_awake = true\n")
+
+    process, _ = run_pid(
+        tmp_path,
+        ["--config", str(config_path), "feature/cool-stuff", "prompt"],
+        commands=(),
+    )
+
+    assert process.returncode == 2
+    assert "keep_screen_awake is only implemented on macOS" in process.stderr
+
+
+def test_keep_screen_awake_does_not_start_for_usage_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(keepawake_module.sys, "platform", "linux")
+    config_path = tmp_path / "config.toml"
+    config_path.write_text("[runtime]\nkeep_screen_awake = true\n")
+
+    process, _ = run_pid(tmp_path, ["--config", str(config_path)], commands=())
+
+    assert_success(process)
+    assert process.stdout == (
+        "usage: pid [session] [ATTEMPTS] [THINKING] BRANCH [PROMPT...]\n"
+    )
+    assert process.stderr == ""
 
 
 def test_generated_commit_title_is_validated_with_cog(tmp_path: Path) -> None:

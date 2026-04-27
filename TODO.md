@@ -1,5 +1,6 @@
 # TODO
 
+- [x] Review keep-screen-awake implementation
 - [x] Move audit into hk.pkl
 - [x] Squash merge PR #6
 - [x] Add AI-authored commit and PR messages
@@ -22,6 +23,8 @@
 - [x] Add configurable agent harness
 - [x] Rename project to pid
 - [x] Rename repository and git remote to pid
+- [x] Add keep-screen-awake option for orcha
+- [ ] Implement Linux keep-awake support when pid can rely on a built-in inhibitor
 - [ ] Add higher-level orchestrator agent (see `ORCHESTRATOR_AGENT_PLAN.md`)
 - [x] Fix PR merge attempts counting only review rejects
 - [x] Fix thinking bump on rebase conflict-only failures

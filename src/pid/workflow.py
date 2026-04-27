@@ -10,6 +10,7 @@ from pid.commands import CommandRunner, require_command
 from pid.config import PIDConfig
 from pid.errors import PIDAbort, abort
 from pid.github import GitHub
+from pid.keepawake import KeepAwake
 from pid.messages import parse_commit_message
 from pid.models import CommitMessage, ParsedArgs
 from pid.output import (
@@ -45,6 +46,7 @@ class PIDFlow:
         self.github = GitHub(self.runner)
         self.review_rejected_first_pass = False
         self.session_logger: SessionLogger | None = None
+        self.keep_awake: KeepAwake | None = None
 
     def run(self, argv: list[str]) -> int:
         exit_code = 0
@@ -60,6 +62,9 @@ class PIDFlow:
                 )
             raise
         finally:
+            if self.keep_awake is not None:
+                self.keep_awake.stop()
+                self.keep_awake = None
             if self.session_logger is not None:
                 self.session_logger.event(f"exit code: {exit_code}")
                 self.session_logger.close()
@@ -74,6 +79,7 @@ class PIDFlow:
             thinking_levels=self.config.agent.thinking_levels,
         )
         self.start_session_logging(argv)
+        self.start_keep_awake()
         self.log_parsed_args(parsed)
         followup_thinking_level = parsed.thinking_level
 
@@ -201,6 +207,15 @@ class PIDFlow:
         set_session_logger(self.session_logger)
         self.runner.set_logger(self.session_logger)
         echo_out(f"pid: session log: {self.session_logger.path}")
+
+    def start_keep_awake(self) -> None:
+        """Start the optional keep-awake helper for a valid pid run."""
+
+        self.keep_awake = KeepAwake(
+            enabled=self.config.runtime.keep_screen_awake,
+            logger=self.session_logger,
+        )
+        self.keep_awake.start()
 
     def log_parsed_args(self, parsed: ParsedArgs) -> None:
         """Record parsed CLI args in the session log."""

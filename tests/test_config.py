@@ -56,6 +56,20 @@ def test_default_missing_config_path_uses_defaults(
     assert load_config() == config_module.PIDConfig()
 
 
+def test_runtime_keep_screen_awake_defaults_off(tmp_path: Path) -> None:
+    loaded = parse_config({}, tmp_path / "config.toml")
+
+    assert loaded.runtime.keep_screen_awake is False
+
+
+def test_runtime_keep_screen_awake_can_be_enabled(tmp_path: Path) -> None:
+    loaded = parse_config(
+        {"runtime": {"keep_screen_awake": True}}, tmp_path / "config.toml"
+    )
+
+    assert loaded.runtime.keep_screen_awake is True
+
+
 def test_agent_command_accepts_shell_style_string(tmp_path: Path) -> None:
     config = parse_config(
         {
@@ -85,6 +99,18 @@ def test_agent_command_accepts_shell_style_string(tmp_path: Path) -> None:
         "--message",
         "do work",
     ]
+
+
+def test_invalid_runtime_config_is_rejected(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(PIDAbort) as exc_info:
+        parse_config(
+            {"runtime": {"keep_screen_awake": "yes"}}, tmp_path / "config.toml"
+        )
+
+    assert exc_info.value.code == 2
+    assert "runtime.keep_screen_awake must be a boolean" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(

@@ -5,11 +5,12 @@ from __future__ import annotations
 import shutil
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 from pid.commands import CommandRunner, require_command
 from pid.config import PIDConfig
-from pid.context import WorkflowContext
+from pid.context import PRLoopState, WorkflowContext
 from pid.errors import PIDAbort, abort
 from pid.events import EventSink, NullEventSink
 from pid.extensions import (
@@ -138,6 +139,7 @@ class PIDFlow:
             for step in self.registry.resolve_steps(
                 self.default_steps(),
                 known_steps=(step.name for step in bootstrap_steps),
+                external_steps=self.pr_loop_step_names(),
             ):
                 self.run_workflow_step(ctx, step)
             ctx.emit("workflow.completed")
@@ -186,6 +188,38 @@ class PIDFlow:
             WorkflowStep("commit_changes", self.step_commit_changes),
             WorkflowStep("run_pr_loop", self.step_run_pr_loop),
         ]
+
+    def default_pr_loop_steps(self) -> list[WorkflowStep]:
+        """Return extension-aware PR-loop substeps."""
+
+        return [
+            WorkflowStep("pr_prepare_attempt", self.step_pr_prepare_attempt),
+            WorkflowStep(
+                "pr_refresh_base_before_message",
+                self.step_pr_refresh_base_before_message,
+            ),
+            WorkflowStep("pr_regenerate_message", self.step_pr_regenerate_message),
+            WorkflowStep(
+                "pr_refresh_base_before_pr", self.step_pr_refresh_base_before_pr
+            ),
+            WorkflowStep("pr_push_branch", self.step_pr_push_branch),
+            WorkflowStep("pr_ensure_pr", self.step_pr_ensure_pr),
+            WorkflowStep("pr_wait_for_checks", self.step_pr_wait_for_checks),
+            WorkflowStep("pr_handle_checks", self.step_pr_handle_checks),
+            WorkflowStep(
+                "pr_refresh_base_after_checks",
+                self.step_pr_refresh_base_after_checks,
+            ),
+            WorkflowStep("pr_squash_merge", self.step_pr_squash_merge),
+            WorkflowStep("pr_recover_merge", self.step_pr_recover_merge),
+            WorkflowStep("pr_confirm_merge", self.step_pr_confirm_merge),
+            WorkflowStep("pr_cleanup", self.step_pr_cleanup),
+        ]
+
+    def pr_loop_step_names(self) -> tuple[str, ...]:
+        """Return known PR-loop substep names for extension validation."""
+
+        return tuple(step.name for step in self.default_pr_loop_steps())
 
     def run_workflow_step(self, ctx: WorkflowContext, step: WorkflowStep) -> None:
         """Run one step with hooks, events, replacements, and bounded retry."""
@@ -464,17 +498,7 @@ class PIDFlow:
     def step_run_pr_loop(self, ctx: WorkflowContext) -> None:
         if ctx.commit_message is None:
             raise RuntimeError("commit message has not been generated")
-        self.run_pr_loop(
-            parsed=ctx.require_parsed(),
-            base_rev=ctx.base_rev,
-            commit_message=ctx.commit_message,
-            commit_title=ctx.commit_title,
-            rewritten_head=ctx.rewritten_head,
-            followup_thinking_level=ctx.followup_thinking_level,
-            main_worktree=ctx.main_worktree,
-            default_branch=ctx.default_branch,
-            worktree_path=ctx.worktree_path,
-        )
+        self.run_pr_loop(ctx)
 
     def start_session_logging(self, argv: list[str]) -> None:
         """Create and announce the per-run session log."""
@@ -566,284 +590,393 @@ class PIDFlow:
             f"pid: {self.config.forge.executable} is required for PR creation",
         )
 
-    def run_pr_loop(
-        self,
-        *,
-        parsed: ParsedArgs,
-        base_rev: str,
-        commit_message: CommitMessage,
-        commit_title: str,
-        rewritten_head: str,
-        followup_thinking_level: str,
-        main_worktree: str,
-        default_branch: str,
-        worktree_path: str,
-    ) -> None:
-        need_force_push = False
-        pr_url = ""
-        message_state_hash = self.repository.state_hash(worktree_path)
-        base_refresh_count = 0
-        base_refresh_stage_counts: dict[str, int] = {}
-        checks_timeout_seconds = env_int(
-            "PID_CHECKS_TIMEOUT_SECONDS", self.config.workflow.checks_timeout_seconds
+    def run_pr_loop(self, ctx: WorkflowContext) -> None:
+        """Run the extension-aware PR attempt loop."""
+
+        parsed = ctx.require_parsed()
+        ctx.pr_loop = PRLoopState(
+            message_state_hash=self.repository.state_hash(ctx.worktree_path),
+            checks_timeout_seconds=env_int(
+                "PID_CHECKS_TIMEOUT_SECONDS",
+                self.config.workflow.checks_timeout_seconds,
+            ),
+            checks_poll_interval_seconds=env_int(
+                "PID_CHECKS_POLL_INTERVAL_SECONDS",
+                self.config.workflow.checks_poll_interval_seconds,
+            ),
+            merge_retry_limit=env_int(
+                "PID_MERGE_RETRY_LIMIT", self.config.workflow.merge_retry_limit
+            ),
         )
-        checks_poll_interval_seconds = env_int(
-            "PID_CHECKS_POLL_INTERVAL_SECONDS",
-            self.config.workflow.checks_poll_interval_seconds,
+        ctx.base_refresh_count = 0
+        ctx.base_refresh_stage_counts = {}
+        ctx.merge_retries = 0
+        ctx.attempt = 1
+
+        pr_loop_steps = self.registry.resolve_steps(
+            self.default_pr_loop_steps(),
+            external_steps=(
+                *(step.name for step in self.bootstrap_steps()),
+                *(step.name for step in self.default_steps()),
+            ),
+            include_unanchored=False,
         )
-        merge_retry_limit = env_int(
-            "PID_MERGE_RETRY_LIMIT", self.config.workflow.merge_retry_limit
-        )
-        merge_retries = 0
-        attempt = 1
 
-        while attempt <= parsed.max_attempts:
-            if self.session_logger is not None:
-                self.session_logger.separator(
-                    f"PR ATTEMPT {attempt}/{parsed.max_attempts}"
-                )
-            print_attempt_header(attempt, parsed.max_attempts)
-            echo_out(f"pid: PR attempt {attempt}/{parsed.max_attempts}")
-            commit_title = self.repository.commit_dirty_automated_feedback(
-                worktree_path,
-                commit_title,
-                self.config.commit.automated_feedback_title,
-            )
-            refresh_result, base_refresh_count = self.refresh_base_if_needed(
-                stage="before_message",
-                base_refresh_count=base_refresh_count,
-                stage_counts=base_refresh_stage_counts,
-                default_branch=default_branch,
-                original_prompt=parsed.prompt,
-                pr_title=commit_message.title,
-                pr_body=commit_message.body,
-                pr_url=pr_url or "(not opened yet)",
-                commit_title=commit_title,
-                followup_thinking_level=followup_thinking_level,
-                worktree_path=worktree_path,
-            )
-            self.abort_on_stopped_base_refresh(refresh_result, "before message")
-            refreshed_before_message = refresh_result in REFRESH_REBASE_RESULTS
-            if refreshed_before_message:
-                need_force_push = True
-                commit_title = self.repository.commit_rebase_changes(
-                    worktree_path,
-                    commit_title,
-                    self.config.commit.rebase_feedback_title,
-                )
-            current_state_hash = self.repository.state_hash(worktree_path)
-            if refreshed_before_message or current_state_hash != message_state_hash:
-                commit_message, message_state_hash = self.regenerate_commit_message(
-                    parsed=parsed,
-                    base_rev=base_rev,
-                    worktree_path=worktree_path,
-                )
-
-            refresh_result, base_refresh_count = self.refresh_base_if_needed(
-                stage="before_pr",
-                base_refresh_count=base_refresh_count,
-                stage_counts=base_refresh_stage_counts,
-                default_branch=default_branch,
-                original_prompt=parsed.prompt,
-                pr_title=commit_message.title,
-                pr_body=commit_message.body,
-                pr_url=pr_url or "(not opened yet)",
-                commit_title=commit_title,
-                followup_thinking_level=followup_thinking_level,
-                worktree_path=worktree_path,
-            )
-            self.abort_on_stopped_base_refresh(refresh_result, "before PR push")
-            if refresh_result in REFRESH_REBASE_RESULTS:
-                need_force_push = True
-                commit_title = self.repository.commit_rebase_changes(
-                    worktree_path,
-                    commit_title,
-                    self.config.commit.rebase_feedback_title,
-                )
-                commit_message, message_state_hash = self.regenerate_commit_message(
-                    parsed=parsed,
-                    base_rev=base_rev,
-                    worktree_path=worktree_path,
-                )
-
-            self.push_pr_branch(
-                branch=parsed.branch,
-                worktree_path=worktree_path,
-                force=need_force_push,
-                rewritten_head=rewritten_head,
-            )
-            need_force_push = False
-
-            self.forge.ensure_pr(parsed.branch, commit_message, worktree_path)
-            pr_title = commit_message.title
-            pr_url = self.forge.pr_url(parsed.branch, worktree_path)
-
-            checks_status, checks_out = self.forge.wait_for_checks(
-                parsed.branch,
-                checks_timeout_seconds,
-                checks_poll_interval_seconds,
-                worktree_path,
-            )
-            if has_output(checks_out) and (
-                checks_status != 0 or not self.runner.writes_success_output()
-            ):
-                write_collected(checks_out, stream=sys.stdout)
-            if checks_status != 0:
-                if self.forge.output_reports_no_checks(checks_out):
-                    echo_out("pid: no CI checks reported; continuing")
-                elif attempt >= parsed.max_attempts:
-                    echo_err(
-                        f"pid: CI checks failed after {attempt} attempts; "
-                        f"leaving PR open: {pr_url}"
-                    )
-                    abort(checks_status)
-                else:
-                    followup_thinking_level = self.fix_ci_failures(
-                        pr_title=pr_title,
-                        pr_url=pr_url,
-                        commit_title=commit_title,
-                        checks_out=checks_out,
-                        followup_thinking_level=followup_thinking_level,
-                        worktree_path=worktree_path,
-                    )
-                    attempt += 1
-                    merge_retries = 0
-                    continue
-
-            refresh_result, base_refresh_count = self.refresh_base_if_needed(
-                stage="after_checks",
-                base_refresh_count=base_refresh_count,
-                stage_counts=base_refresh_stage_counts,
-                default_branch=default_branch,
-                original_prompt=parsed.prompt,
-                pr_title=pr_title,
-                pr_body=commit_message.body,
-                pr_url=pr_url,
-                commit_title=commit_title,
-                followup_thinking_level=followup_thinking_level,
-                worktree_path=worktree_path,
-            )
-            self.abort_on_stopped_base_refresh(refresh_result, "after checks")
-            if refresh_result in REFRESH_REBASE_RESULTS:
-                commit_title = self.repository.commit_rebase_changes(
-                    worktree_path,
-                    commit_title,
-                    self.config.commit.rebase_feedback_title,
-                )
-                commit_message, message_state_hash = self.regenerate_commit_message(
-                    parsed=parsed,
-                    base_rev=base_rev,
-                    worktree_path=worktree_path,
-                )
-                self.runner.require(
-                    [
-                        "git",
-                        "push",
-                        "--force-with-lease",
-                        "-u",
-                        "origin",
-                        parsed.branch,
-                    ],
-                    cwd=worktree_path,
-                )
-                self.forge.ensure_pr(parsed.branch, commit_message, worktree_path)
-                merge_retries = 0
+        while ctx.attempt <= parsed.max_attempts:
+            ctx.pr_loop.next_iteration = False
+            ctx.pr_loop.merge_result = None
+            ctx.pr_loop.pr_head_oid = ""
+            ctx.pr_loop.merge_confirmed = False
+            ctx.pr_loop.refreshed_before_message = False
+            ctx.pr_loop.refresh_stage = ""
+            ctx.pr_loop.refresh_result = ""
+            ctx.checks_status = 0
+            ctx.checks_output = ""
+            for step in pr_loop_steps:
+                self.run_workflow_step(ctx, step)
+                if ctx.pr_loop.completed:
+                    return
+                if ctx.pr_loop.next_iteration:
+                    break
+            if ctx.pr_loop.completed:
+                return
+            if ctx.pr_loop.merge_confirmed:
+                ctx.pr_loop.completed = True
+                return
+            if ctx.pr_loop.next_iteration:
                 continue
-
-            pr_head_oid = ""
-            if self.config.forge.merge_uses_head_oid:
-                pr_head_oid = self.forge.head_oid(parsed.branch, worktree_path)
-            merge_result = self.forge.squash_merge(
-                parsed.branch,
-                pr_head_oid,
-                commit_message,
-                pr_url,
-                worktree_path,
+            raise ExtensionError(
+                "PR loop did not complete or request another iteration; "
+                "PR-loop step replacements must set ctx.pr_loop.completed or "
+                "ctx.pr_loop.next_iteration, or leave terminal substeps enabled"
             )
-            if has_output(merge_result.stdout) and (
-                merge_result.returncode != 0 or not self.runner.writes_success_output()
-            ):
-                write_collected(merge_result.stdout, stream=sys.stdout)
-
-            if merge_result.returncode == 0:
-                self.finish_successful_merge(
-                    pr_url=pr_url,
-                    pr_title=pr_title,
-                    main_worktree=main_worktree,
-                    default_branch=default_branch,
-                    branch=parsed.branch,
-                    worktree_path=worktree_path,
-                )
-                return
-
-            if self.forge.reports_merged(pr_url, worktree_path):
-                echo_out(
-                    f"pid: {self.config.forge.label} reports PR merged despite "
-                    "local forge cleanup failure; cleaning up"
-                )
-                self.cleanup_and_print_success(
-                    pr_url=pr_url,
-                    pr_title=pr_title,
-                    main_worktree=main_worktree,
-                    default_branch=default_branch,
-                    branch=parsed.branch,
-                    worktree_path=worktree_path,
-                )
-                return
-
-            merge_retries += 1
-            if merge_retries > merge_retry_limit:
-                echo_err(
-                    f"pid: {self.config.forge.label} squash merge failed after "
-                    f"{merge_retry_limit} merge retries; leaving PR open: {pr_url}"
-                )
-                abort(merge_result.returncode)
-
-            echo_out(
-                "pid: merge failed; rebasing onto latest "
-                f"origin/{default_branch} before retry "
-                f"({merge_retries}/{merge_retry_limit} merge retries; "
-                "agent attempts unchanged)"
-            )
-            self.runner.require(
-                ["git", "fetch", "origin", default_branch], cwd=worktree_path
-            )
-
-            rebase_result = self.runner.run(
-                ["git", "rebase", f"origin/{default_branch}"], cwd=worktree_path
-            )
-            if rebase_result.returncode != 0:
-                write_command_output(rebase_result)
-                followup_thinking_level = self.fix_rebase(
-                    original_prompt=parsed.prompt,
-                    pr_title=pr_title,
-                    pr_body=commit_message.body,
-                    pr_url=pr_url,
-                    default_branch=default_branch,
-                    commit_title=commit_title,
-                    merge_out=command_diagnostics(merge_result, rebase_result),
-                    followup_thinking_level=followup_thinking_level,
-                    worktree_path=worktree_path,
-                )
-
-            if self.repository.rebase_in_progress(worktree_path):
-                echo_err(
-                    "pid: rebase still in progress after agent; "
-                    f"leaving PR open: {pr_url}"
-                )
-                abort(1)
-
-            commit_title = self.repository.commit_rebase_changes(
-                worktree_path,
-                commit_title,
-                self.config.commit.rebase_feedback_title,
-            )
-            need_force_push = True
 
         echo_err(
-            f"pid: exhausted {parsed.max_attempts} attempts; leaving worktree: {worktree_path}"
+            "pid: exhausted "
+            f"{parsed.max_attempts} attempts; leaving worktree: {ctx.worktree_path}"
         )
         abort(1)
+
+    def run_policy(
+        self,
+        ctx: WorkflowContext,
+        name: str,
+        default: Callable[[WorkflowContext], StepResult | None],
+    ) -> None:
+        """Run a replaceable policy callback."""
+
+        policy = ctx.registry.policies.get(name, default)
+        handler = policy if callable(policy) else getattr(policy, "run", None)
+        if not callable(handler):
+            raise ExtensionError(f"policy {name} must be callable or expose run(ctx)")
+        try:
+            result = normalize_step_result(handler(ctx))
+        except ExtensionError, PIDAbort:
+            raise
+        except Exception as error:
+            raise ExtensionError(
+                f"policy {name} failed: {type(error).__name__}: {error}"
+            ) from error
+        self.handle_step_result(result)
+
+    def step_pr_prepare_attempt(self, ctx: WorkflowContext) -> None:
+        parsed = ctx.require_parsed()
+        if self.session_logger is not None:
+            self.session_logger.separator(
+                f"PR ATTEMPT {ctx.attempt}/{parsed.max_attempts}"
+            )
+        print_attempt_header(ctx.attempt, parsed.max_attempts)
+        echo_out(f"pid: PR attempt {ctx.attempt}/{parsed.max_attempts}")
+        ctx.commit_title = self.repository.commit_dirty_automated_feedback(
+            ctx.worktree_path,
+            ctx.commit_title,
+            self.config.commit.automated_feedback_title,
+        )
+
+    def step_pr_refresh_base_before_message(self, ctx: WorkflowContext) -> None:
+        self.run_base_refresh_step(ctx, "before_message", "before message")
+        ctx.pr_loop.refreshed_before_message = (
+            ctx.pr_loop.refresh_result in REFRESH_REBASE_RESULTS
+        )
+        if ctx.pr_loop.refreshed_before_message:
+            ctx.pr_loop.need_force_push = True
+            ctx.commit_title = self.repository.commit_rebase_changes(
+                ctx.worktree_path,
+                ctx.commit_title,
+                self.config.commit.rebase_feedback_title,
+            )
+
+    def step_pr_regenerate_message(self, ctx: WorkflowContext) -> None:
+        current_state_hash = self.repository.state_hash(ctx.worktree_path)
+        if (
+            not ctx.pr_loop.refreshed_before_message
+            and current_state_hash == ctx.pr_loop.message_state_hash
+        ):
+            return
+        self.regenerate_context_message(ctx)
+
+    def step_pr_refresh_base_before_pr(self, ctx: WorkflowContext) -> None:
+        self.run_base_refresh_step(ctx, "before_pr", "before PR push")
+        if ctx.pr_loop.refresh_result not in REFRESH_REBASE_RESULTS:
+            return
+        ctx.pr_loop.need_force_push = True
+        ctx.commit_title = self.repository.commit_rebase_changes(
+            ctx.worktree_path,
+            ctx.commit_title,
+            self.config.commit.rebase_feedback_title,
+        )
+        self.regenerate_context_message(ctx)
+
+    def step_pr_push_branch(self, ctx: WorkflowContext) -> None:
+        self.run_policy(ctx, "pr.push", self.policy_pr_push_branch)
+        ctx.pr_loop.need_force_push = False
+
+    def step_pr_ensure_pr(self, ctx: WorkflowContext) -> None:
+        self.run_policy(ctx, "pr.ensure_pr", self.policy_pr_ensure_pr)
+
+    def step_pr_wait_for_checks(self, ctx: WorkflowContext) -> None:
+        self.run_policy(ctx, "pr.checks", self.policy_pr_checks)
+
+    def step_pr_handle_checks(self, ctx: WorkflowContext) -> None:
+        parsed = ctx.require_parsed()
+        if ctx.checks_status == 0:
+            return
+        if self.forge.output_reports_no_checks(ctx.checks_output):
+            echo_out("pid: no CI checks reported; continuing")
+            return
+        if ctx.attempt >= parsed.max_attempts:
+            echo_err(
+                f"pid: CI checks failed after {ctx.attempt} attempts; "
+                f"leaving PR open: {ctx.pr_url}"
+            )
+            abort(ctx.checks_status)
+        self.run_policy(ctx, "pr.ci_fix", self.policy_pr_ci_fix)
+        ctx.attempt += 1
+        ctx.merge_retries = 0
+        ctx.pr_loop.next_iteration = True
+
+    def step_pr_refresh_base_after_checks(self, ctx: WorkflowContext) -> None:
+        self.run_base_refresh_step(ctx, "after_checks", "after checks")
+        if ctx.pr_loop.refresh_result not in REFRESH_REBASE_RESULTS:
+            return
+        ctx.commit_title = self.repository.commit_rebase_changes(
+            ctx.worktree_path,
+            ctx.commit_title,
+            self.config.commit.rebase_feedback_title,
+        )
+        self.regenerate_context_message(ctx)
+        ctx.pr_loop.need_force_push = True
+        self.run_workflow_step(
+            ctx, WorkflowStep("pr_push_branch", self.step_pr_push_branch)
+        )
+        self.run_workflow_step(
+            ctx, WorkflowStep("pr_ensure_pr", self.step_pr_ensure_pr)
+        )
+        ctx.merge_retries = 0
+        ctx.pr_loop.next_iteration = True
+
+    def step_pr_squash_merge(self, ctx: WorkflowContext) -> None:
+        self.run_policy(ctx, "pr.merge", self.policy_pr_merge)
+
+    def step_pr_recover_merge(self, ctx: WorkflowContext) -> None:
+        merge_result = ctx.pr_loop.merge_result
+        if merge_result is None or merge_result.returncode == 0:
+            return
+        self.run_policy(ctx, "pr.merge_recovery", self.policy_pr_merge_recovery)
+
+    def step_pr_confirm_merge(self, ctx: WorkflowContext) -> None:
+        if ctx.pr_loop.merge_confirmed:
+            return
+        merge_result = ctx.pr_loop.merge_result
+        if merge_result is None or merge_result.returncode != 0:
+            return
+        self.run_policy(
+            ctx,
+            "pr.merge_confirmation",
+            self.policy_pr_merge_confirmation,
+        )
+
+    def step_pr_cleanup(self, ctx: WorkflowContext) -> None:
+        if not ctx.pr_loop.merge_confirmed:
+            return
+        self.run_policy(ctx, "pr.cleanup", self.policy_pr_cleanup)
+        ctx.pr_loop.completed = True
+
+    def run_base_refresh_step(
+        self, ctx: WorkflowContext, stage: str, stopped_label: str
+    ) -> None:
+        ctx.pr_loop.refresh_stage = stage
+        ctx.pr_loop.refresh_result = "unchanged"
+        self.run_policy(ctx, "pr.base_refresh", self.policy_pr_base_refresh)
+        self.abort_on_stopped_base_refresh(ctx.pr_loop.refresh_result, stopped_label)
+
+    def regenerate_context_message(self, ctx: WorkflowContext) -> None:
+        commit_message, message_state_hash = self.regenerate_commit_message(
+            parsed=ctx.require_parsed(),
+            base_rev=ctx.base_rev,
+            worktree_path=ctx.worktree_path,
+        )
+        ctx.set_commit_message(commit_message)
+        ctx.pr_loop.message_state_hash = message_state_hash
+
+    def policy_pr_base_refresh(self, ctx: WorkflowContext) -> None:
+        if ctx.commit_message is None:
+            raise RuntimeError("commit message has not been generated")
+        refresh_result, ctx.base_refresh_count = self.refresh_base_if_needed(
+            stage=ctx.pr_loop.refresh_stage,
+            base_refresh_count=ctx.base_refresh_count,
+            stage_counts=ctx.base_refresh_stage_counts,
+            default_branch=ctx.default_branch,
+            original_prompt=ctx.require_parsed().prompt,
+            pr_title=ctx.commit_message.title,
+            pr_body=ctx.commit_message.body,
+            pr_url=ctx.pr_url or "(not opened yet)",
+            commit_title=ctx.commit_title,
+            followup_thinking_level=ctx.followup_thinking_level,
+            worktree_path=ctx.worktree_path,
+        )
+        ctx.pr_loop.refresh_result = refresh_result
+
+    def policy_pr_push_branch(self, ctx: WorkflowContext) -> None:
+        self.push_pr_branch(
+            branch=ctx.require_parsed().branch,
+            worktree_path=ctx.worktree_path,
+            force=ctx.pr_loop.need_force_push,
+            rewritten_head=ctx.rewritten_head,
+        )
+
+    def policy_pr_ensure_pr(self, ctx: WorkflowContext) -> None:
+        if ctx.commit_message is None:
+            raise RuntimeError("commit message has not been generated")
+        parsed = ctx.require_parsed()
+        self.forge.ensure_pr(parsed.branch, ctx.commit_message, ctx.worktree_path)
+        ctx.pr_title = ctx.commit_message.title
+        ctx.pr_url = self.forge.pr_url(parsed.branch, ctx.worktree_path)
+
+    def policy_pr_checks(self, ctx: WorkflowContext) -> None:
+        ctx.checks_status, ctx.checks_output = self.forge.wait_for_checks(
+            ctx.require_parsed().branch,
+            ctx.pr_loop.checks_timeout_seconds,
+            ctx.pr_loop.checks_poll_interval_seconds,
+            ctx.worktree_path,
+        )
+        if has_output(ctx.checks_output) and (
+            ctx.checks_status != 0 or not self.runner.writes_success_output()
+        ):
+            write_collected(ctx.checks_output, stream=sys.stdout)
+
+    def policy_pr_ci_fix(self, ctx: WorkflowContext) -> None:
+        ctx.followup_thinking_level = self.fix_ci_failures(
+            pr_title=ctx.pr_title,
+            pr_url=ctx.pr_url,
+            commit_title=ctx.commit_title,
+            checks_out=ctx.checks_output,
+            followup_thinking_level=ctx.followup_thinking_level,
+            worktree_path=ctx.worktree_path,
+        )
+
+    def policy_pr_merge(self, ctx: WorkflowContext) -> None:
+        if ctx.commit_message is None:
+            raise RuntimeError("commit message has not been generated")
+        ctx.pr_loop.pr_head_oid = ""
+        if self.config.forge.merge_uses_head_oid:
+            ctx.pr_loop.pr_head_oid = self.forge.head_oid(
+                ctx.require_parsed().branch, ctx.worktree_path
+            )
+        ctx.pr_loop.merge_result = self.forge.squash_merge(
+            ctx.require_parsed().branch,
+            ctx.pr_loop.pr_head_oid,
+            ctx.commit_message,
+            ctx.pr_url,
+            ctx.worktree_path,
+        )
+        if has_output(ctx.pr_loop.merge_result.stdout) and (
+            ctx.pr_loop.merge_result.returncode != 0
+            or not self.runner.writes_success_output()
+        ):
+            write_collected(ctx.pr_loop.merge_result.stdout, stream=sys.stdout)
+
+    def policy_pr_merge_recovery(self, ctx: WorkflowContext) -> None:
+        merge_result = ctx.pr_loop.merge_result
+        if merge_result is None:
+            raise RuntimeError("merge result is not available")
+        if self.forge.reports_merged(ctx.pr_url, ctx.worktree_path):
+            echo_out(
+                f"pid: {self.config.forge.label} reports PR merged despite "
+                "local forge cleanup failure; cleaning up"
+            )
+            ctx.pr_loop.merge_confirmed = True
+            return
+
+        ctx.merge_retries += 1
+        if ctx.merge_retries > ctx.pr_loop.merge_retry_limit:
+            echo_err(
+                f"pid: {self.config.forge.label} squash merge failed after "
+                f"{ctx.pr_loop.merge_retry_limit} merge retries; "
+                f"leaving PR open: {ctx.pr_url}"
+            )
+            abort(merge_result.returncode)
+
+        echo_out(
+            "pid: merge failed; rebasing onto latest "
+            f"origin/{ctx.default_branch} before retry "
+            f"({ctx.merge_retries}/{ctx.pr_loop.merge_retry_limit} merge retries; "
+            "agent attempts unchanged)"
+        )
+        self.runner.require(
+            ["git", "fetch", "origin", ctx.default_branch], cwd=ctx.worktree_path
+        )
+
+        rebase_result = self.runner.run(
+            ["git", "rebase", f"origin/{ctx.default_branch}"], cwd=ctx.worktree_path
+        )
+        if rebase_result.returncode != 0:
+            write_command_output(rebase_result)
+            if ctx.commit_message is None:
+                raise RuntimeError("commit message has not been generated")
+            ctx.followup_thinking_level = self.fix_rebase(
+                original_prompt=ctx.require_parsed().prompt,
+                pr_title=ctx.pr_title,
+                pr_body=ctx.commit_message.body,
+                pr_url=ctx.pr_url,
+                default_branch=ctx.default_branch,
+                commit_title=ctx.commit_title,
+                merge_out=command_diagnostics(merge_result, rebase_result),
+                followup_thinking_level=ctx.followup_thinking_level,
+                worktree_path=ctx.worktree_path,
+            )
+
+        if self.repository.rebase_in_progress(ctx.worktree_path):
+            echo_err(
+                "pid: rebase still in progress after agent; "
+                f"leaving PR open: {ctx.pr_url}"
+            )
+            abort(1)
+
+        ctx.commit_title = self.repository.commit_rebase_changes(
+            ctx.worktree_path,
+            ctx.commit_title,
+            self.config.commit.rebase_feedback_title,
+        )
+        ctx.pr_loop.need_force_push = True
+        ctx.pr_loop.next_iteration = True
+
+    def policy_pr_merge_confirmation(self, ctx: WorkflowContext) -> None:
+        if not self.wait_for_confirmed_merge(
+            pr_url=ctx.pr_url, worktree_path=ctx.worktree_path
+        ):
+            abort(1)
+        ctx.pr_loop.merge_confirmed = True
+
+    def policy_pr_cleanup(self, ctx: WorkflowContext) -> None:
+        self.cleanup_and_print_success(
+            pr_url=ctx.pr_url,
+            pr_title=ctx.pr_title,
+            main_worktree=ctx.main_worktree,
+            default_branch=ctx.default_branch,
+            branch=ctx.require_parsed().branch,
+            worktree_path=ctx.worktree_path,
+        )
 
     def regenerate_commit_message(
         self, *, parsed: ParsedArgs, base_rev: str, worktree_path: str

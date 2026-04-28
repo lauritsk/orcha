@@ -480,22 +480,36 @@ def parse_config(data: dict[str, Any], path: Path) -> PIDConfig:
     )
 
 
-def parse_agent_config(data: Any, path: Path) -> AgentConfig:
-    if not isinstance(data, dict):
-        fail_config(path, "[agent] must be a table")
+def config_section(
+    data: Any, path: Path, name: str, allowed: set[str]
+) -> dict[str, Any]:
+    """Return a validated config section table."""
 
-    allowed = {
-        "command",
-        "non_interactive_args",
-        "interactive_args",
-        "default_thinking",
-        "review_thinking",
-        "thinking_levels",
-        "label",
-    }
+    if not isinstance(data, dict):
+        fail_config(path, f"[{name}] must be a table")
+
     unknown = set(data) - allowed
     if unknown:
-        fail_config(path, f"unknown [agent] key: {sorted(unknown)[0]}")
+        fail_config(path, f"unknown [{name}] key: {sorted(unknown)[0]}")
+
+    return data
+
+
+def parse_agent_config(data: Any, path: Path) -> AgentConfig:
+    data = config_section(
+        data,
+        path,
+        "agent",
+        {
+            "command",
+            "non_interactive_args",
+            "interactive_args",
+            "default_thinking",
+            "review_thinking",
+            "thinking_levels",
+            "label",
+        },
+    )
 
     default = AgentConfig()
     command = string_tuple(
@@ -576,13 +590,7 @@ def parse_agent_config(data: Any, path: Path) -> AgentConfig:
 
 
 def parse_runtime_config(data: Any, path: Path) -> RuntimeConfig:
-    if not isinstance(data, dict):
-        fail_config(path, "[runtime] must be a table")
-
-    allowed = {"keep_screen_awake"}
-    unknown = set(data) - allowed
-    if unknown:
-        fail_config(path, f"unknown [runtime] key: {sorted(unknown)[0]}")
+    data = config_section(data, path, "runtime", {"keep_screen_awake"})
 
     default = RuntimeConfig()
     keep_screen_awake = boolean_value(
@@ -595,18 +603,17 @@ def parse_runtime_config(data: Any, path: Path) -> RuntimeConfig:
 
 
 def parse_commit_config(data: Any, path: Path) -> CommitConfig:
-    if not isinstance(data, dict):
-        fail_config(path, "[commit] must be a table")
-
-    allowed = {
-        "verifier_command",
-        "verifier_args",
-        "automated_feedback_title",
-        "rebase_feedback_title",
-    }
-    unknown = set(data) - allowed
-    if unknown:
-        fail_config(path, f"unknown [commit] key: {sorted(unknown)[0]}")
+    data = config_section(
+        data,
+        path,
+        "commit",
+        {
+            "verifier_command",
+            "verifier_args",
+            "automated_feedback_title",
+            "rebase_feedback_title",
+        },
+    )
 
     default = CommitConfig()
     verifier_command = string_tuple(
@@ -655,27 +662,26 @@ def parse_commit_config(data: Any, path: Path) -> CommitConfig:
 
 
 def parse_forge_config(data: Any, path: Path) -> ForgeConfig:
-    if not isinstance(data, dict):
-        fail_config(path, "[forge] must be a table")
-
-    allowed = {
-        "command",
-        "label",
-        "default_branch_args",
-        "pr_view_args",
-        "pr_create_args",
-        "pr_edit_args",
-        "pr_url_args",
-        "pr_head_oid_args",
-        "pr_checks_args",
-        "pr_merge_args",
-        "pr_merged_at_args",
-        "checks_pending_exit_codes",
-        "no_checks_markers",
-    }
-    unknown = set(data) - allowed
-    if unknown:
-        fail_config(path, f"unknown [forge] key: {sorted(unknown)[0]}")
+    data = config_section(
+        data,
+        path,
+        "forge",
+        {
+            "command",
+            "label",
+            "default_branch_args",
+            "pr_view_args",
+            "pr_create_args",
+            "pr_edit_args",
+            "pr_url_args",
+            "pr_head_oid_args",
+            "pr_checks_args",
+            "pr_merge_args",
+            "pr_merged_at_args",
+            "checks_pending_exit_codes",
+            "no_checks_markers",
+        },
+    )
 
     default = ForgeConfig()
     command = string_tuple(
@@ -756,13 +762,12 @@ def parse_forge_config(data: Any, path: Path) -> ForgeConfig:
 
 
 def parse_prompt_config(data: Any, path: Path) -> PromptConfig:
-    if not isinstance(data, dict):
-        fail_config(path, "[prompts] must be a table")
-
-    allowed = {"message", "review", "ci_fix", "rebase_fix", "diagnostic_output_limit"}
-    unknown = set(data) - allowed
-    if unknown:
-        fail_config(path, f"unknown [prompts] key: {sorted(unknown)[0]}")
+    data = config_section(
+        data,
+        path,
+        "prompts",
+        {"message", "review", "ci_fix", "rebase_fix", "diagnostic_output_limit"},
+    )
 
     default = PromptConfig()
     message = string_value(
@@ -812,24 +817,23 @@ def parse_prompt_config(data: Any, path: Path) -> PromptConfig:
 
 
 def parse_workflow_config(data: Any, path: Path) -> WorkflowConfig:
-    if not isinstance(data, dict):
-        fail_config(path, "[workflow] must be a table")
-
-    allowed = {
-        "checks_timeout_seconds",
-        "checks_poll_interval_seconds",
-        "merge_confirmation_timeout_seconds",
-        "merge_confirmation_poll_interval_seconds",
-        "merge_retry_limit",
-        "trust_mise",
-        "base_refresh_enabled",
-        "base_refresh_stages",
-        "base_refresh_limit",
-        "base_refresh_agent_conflict_fix",
-    }
-    unknown = set(data) - allowed
-    if unknown:
-        fail_config(path, f"unknown [workflow] key: {sorted(unknown)[0]}")
+    data = config_section(
+        data,
+        path,
+        "workflow",
+        {
+            "checks_timeout_seconds",
+            "checks_poll_interval_seconds",
+            "merge_confirmation_timeout_seconds",
+            "merge_confirmation_poll_interval_seconds",
+            "merge_retry_limit",
+            "trust_mise",
+            "base_refresh_enabled",
+            "base_refresh_stages",
+            "base_refresh_limit",
+            "base_refresh_agent_conflict_fix",
+        },
+    )
 
     default = WorkflowConfig()
     checks_timeout_seconds = integer_value(

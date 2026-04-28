@@ -37,6 +37,9 @@ from pid.repository import Repository, validate_branch_name
 from pid.session_logging import SessionLogger
 from pid.utils import env_int, has_output, review_target_for, worktree_path_for
 
+REFRESH_STOP_RESULTS = {"limit_reached", "conflict_unresolved"}
+REFRESH_REBASE_RESULTS = {"rebased_cleanly", "rebased_with_agent_fix"}
+
 
 class PIDFlow:
     """Implements the pid orchestration lifecycle."""
@@ -371,13 +374,8 @@ class PIDFlow:
                 followup_thinking_level=followup_thinking_level,
                 worktree_path=worktree_path,
             )
-            if refresh_result in {"limit_reached", "conflict_unresolved"}:
-                echo_err(f"pid: base refresh stopped before message: {refresh_result}")
-                abort(1)
-            refreshed_before_message = refresh_result in {
-                "rebased_cleanly",
-                "rebased_with_agent_fix",
-            }
+            self.abort_on_stopped_base_refresh(refresh_result, "before message")
+            refreshed_before_message = refresh_result in REFRESH_REBASE_RESULTS
             if refreshed_before_message:
                 need_force_push = True
                 commit_title = self.repository.commit_rebase_changes(
@@ -387,13 +385,11 @@ class PIDFlow:
                 )
             current_state_hash = self.repository.state_hash(worktree_path)
             if refreshed_before_message or current_state_hash != message_state_hash:
-                commit_message = self.generate_commit_message(
+                commit_message, message_state_hash = self.regenerate_commit_message(
                     parsed=parsed,
                     base_rev=base_rev,
                     worktree_path=worktree_path,
                 )
-                self.verify_commit_title(commit_message)
-                message_state_hash = self.repository.state_hash(worktree_path)
 
             refresh_result, base_refresh_count = self.refresh_base_if_needed(
                 stage="before_pr",
@@ -408,23 +404,19 @@ class PIDFlow:
                 followup_thinking_level=followup_thinking_level,
                 worktree_path=worktree_path,
             )
-            if refresh_result in {"limit_reached", "conflict_unresolved"}:
-                echo_err(f"pid: base refresh stopped before PR push: {refresh_result}")
-                abort(1)
-            if refresh_result in {"rebased_cleanly", "rebased_with_agent_fix"}:
+            self.abort_on_stopped_base_refresh(refresh_result, "before PR push")
+            if refresh_result in REFRESH_REBASE_RESULTS:
                 need_force_push = True
                 commit_title = self.repository.commit_rebase_changes(
                     worktree_path,
                     commit_title,
                     self.config.commit.rebase_feedback_title,
                 )
-                commit_message = self.generate_commit_message(
+                commit_message, message_state_hash = self.regenerate_commit_message(
                     parsed=parsed,
                     base_rev=base_rev,
                     worktree_path=worktree_path,
                 )
-                self.verify_commit_title(commit_message)
-                message_state_hash = self.repository.state_hash(worktree_path)
 
             self.push_pr_branch(
                 branch=parsed.branch,
@@ -483,22 +475,18 @@ class PIDFlow:
                 followup_thinking_level=followup_thinking_level,
                 worktree_path=worktree_path,
             )
-            if refresh_result in {"limit_reached", "conflict_unresolved"}:
-                echo_err(f"pid: base refresh stopped after checks: {refresh_result}")
-                abort(1)
-            if refresh_result in {"rebased_cleanly", "rebased_with_agent_fix"}:
+            self.abort_on_stopped_base_refresh(refresh_result, "after checks")
+            if refresh_result in REFRESH_REBASE_RESULTS:
                 commit_title = self.repository.commit_rebase_changes(
                     worktree_path,
                     commit_title,
                     self.config.commit.rebase_feedback_title,
                 )
-                commit_message = self.generate_commit_message(
+                commit_message, message_state_hash = self.regenerate_commit_message(
                     parsed=parsed,
                     base_rev=base_rev,
                     worktree_path=worktree_path,
                 )
-                self.verify_commit_title(commit_message)
-                message_state_hash = self.repository.state_hash(worktree_path)
                 self.runner.require(
                     [
                         "git",
@@ -607,6 +595,27 @@ class PIDFlow:
         echo_err(
             f"pid: exhausted {parsed.max_attempts} attempts; leaving worktree: {worktree_path}"
         )
+        abort(1)
+
+    def regenerate_commit_message(
+        self, *, parsed: ParsedArgs, base_rev: str, worktree_path: str
+    ) -> tuple[CommitMessage, str]:
+        """Generate, verify, and snapshot refreshed commit metadata."""
+
+        commit_message = self.generate_commit_message(
+            parsed=parsed,
+            base_rev=base_rev,
+            worktree_path=worktree_path,
+        )
+        self.verify_commit_title(commit_message)
+        return commit_message, self.repository.state_hash(worktree_path)
+
+    def abort_on_stopped_base_refresh(self, refresh_result: str, stage: str) -> None:
+        """Abort when a base refresh hit a terminal non-rebased state."""
+
+        if refresh_result not in REFRESH_STOP_RESULTS:
+            return
+        echo_err(f"pid: base refresh stopped {stage}: {refresh_result}")
         abort(1)
 
     def push_pr_branch(

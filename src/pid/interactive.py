@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import re
+import shutil
 
 import click
+from rich.console import Console, Group
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
 
 from pid.config import PIDConfig
 
@@ -108,18 +113,31 @@ class _InteractiveDisplay:
     def __init__(self) -> None:
         self._line_count = 0
         self._can_update = click.get_text_stream("stdout").isatty()
+        terminal_width = shutil.get_terminal_size((88, 24)).columns
+        width = min(terminal_width, 88) if self._can_update else 88
+        self._console = Console(
+            color_system="auto" if self._can_update else None,
+            force_terminal=self._can_update,
+            highlight=False,
+            width=width,
+        )
 
     def render(self, values: dict[str, str], *, error: str | None = None) -> None:
         self._clear_previous()
-        lines = _value_lines(values)
-        if error and self._can_update:
-            lines.append(error)
-        click.echo("\n".join(lines))
+        rendered = self._render(values, error=error if self._can_update else None)
+        click.echo(rendered, nl=False, color=True)
         if error and not self._can_update:
             click.echo(error, err=True)
         self._line_count = (
-            len(lines) + 1
+            len(rendered.splitlines()) + 1
         )  # include next click.prompt/click.confirm line
+
+    def _render(self, values: dict[str, str], *, error: str | None) -> str:
+        with self._console.capture() as capture:
+            self._console.print(
+                _prompt_summary(values, error=error, width=self._console.width)
+            )
+        return capture.get()
 
     def _clear_previous(self) -> None:
         if not self._can_update or self._line_count <= 0:
@@ -132,11 +150,34 @@ class _InteractiveDisplay:
         click.echo(f"\033[{self._line_count - 1}A", nl=False, color=True)
 
 
-def _value_lines(values: dict[str, str]) -> list[str]:
-    lines = ["pid values:"]
-    lines.extend(f"  {key}: {value}" for key, value in values.items())
-    lines.append("")
-    return lines
+def _prompt_summary(
+    values: dict[str, str], *, error: str | None, width: int | None = None
+) -> Panel:
+    table = Table.grid(padding=(0, 2))
+    table.add_column(style="bold magenta", no_wrap=True)
+    table.add_column()
+    table.add_row("attempts", _summary_value(values["attempts"]))
+    table.add_row("thinking", _summary_value(values["thinking"]))
+    table.add_row("branch", _summary_value(values["branch"]))
+    table.add_row("prompt", _summary_value(values["prompt"]))
+
+    renderable = table
+    if error:
+        renderable = Group(table, Text(f"✗ {error}", style="bold red"))
+
+    return Panel(
+        renderable,
+        title=Text("pid prompt", style="bold magenta"),
+        subtitle=Text("enter to accept defaults", style="dim"),
+        border_style="magenta",
+        width=width,
+    )
+
+
+def _summary_value(value: str) -> Text:
+    if value == "(unset)" or value.startswith("(default"):
+        return Text(value, style="dim")
+    return Text(value)
 
 
 def _prompt_attempts(

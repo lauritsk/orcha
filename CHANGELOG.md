@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## [v0.8.0](https://github.com/lauritsk/pid/compare/8557fb429443974ba1aa3bd10b417bdd45f3a554..v0.8.0) - 2026-04-28
+#### Features
+- render interactive prompts with Rich panels - ([953e99f](https://github.com/lauritsk/pid/commit/953e99f75ba391a5a85198b707cd22b76ae16786)) - Karl Hans Laurits
+#### Miscellaneous Chores
+- update pid tool locally - ([8557fb4](https://github.com/lauritsk/pid/commit/8557fb429443974ba1aa3bd10b417bdd45f3a554)) - Karl Hans Laurits
+
+- - -
+
 ## [v0.7.3](https://github.com/lauritsk/pid/compare/c3859bf9bf9600f41fb7c49b0228052752fd7ef7..v0.7.3) - 2026-04-28
 #### Bug Fixes
 - handle agent-pushed session branches (#33) - ([96307a0](https://github.com/lauritsk/pid/commit/96307a0155d41ea868186923901af468b66a056a)) - Karl Hans Laurits

@@ -102,6 +102,10 @@ base_refresh_enabled = true
 base_refresh_stages = ["before_pr"]
 base_refresh_limit = 3
 base_refresh_agent_conflict_fix = true
+
+[extensions]
+enabled = []
+paths = []
 """
 
 MESSAGE_PROMPT_FIELDS = ("original_prompt", "branch", "base_rev", "output_path")
@@ -382,6 +386,15 @@ class WorkflowConfig:
 
 
 @dataclass(frozen=True)
+class ExtensionConfig:
+    """Extension loading and per-extension configuration."""
+
+    enabled: tuple[str, ...] = ()
+    paths: tuple[str, ...] = ()
+    config: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class PIDConfig:
     """Top-level pid config."""
 
@@ -391,6 +404,7 @@ class PIDConfig:
     forge: ForgeConfig = field(default_factory=ForgeConfig)
     prompts: PromptConfig = field(default_factory=PromptConfig)
     workflow: WorkflowConfig = field(default_factory=WorkflowConfig)
+    extensions: ExtensionConfig = field(default_factory=ExtensionConfig)
 
 
 def default_config_path() -> Path:
@@ -466,6 +480,7 @@ def parse_config(data: dict[str, Any], path: Path) -> PIDConfig:
         "forge",
         "prompts",
         "workflow",
+        "extensions",
     }
     if unknown_top:
         fail_config(path, f"unknown top-level key: {sorted(unknown_top)[0]}")
@@ -477,6 +492,7 @@ def parse_config(data: dict[str, Any], path: Path) -> PIDConfig:
         forge=parse_forge_config(data.get("forge", {}), path),
         prompts=parse_prompt_config(data.get("prompts", {}), path),
         workflow=parse_workflow_config(data.get("workflow", {}), path),
+        extensions=parse_extension_config(data.get("extensions", {}), path),
     )
 
 
@@ -933,6 +949,42 @@ def parse_workflow_config(data: Any, path: Path) -> WorkflowConfig:
         base_refresh_limit=base_refresh_limit,
         base_refresh_agent_conflict_fix=base_refresh_agent_conflict_fix,
     )
+
+
+def parse_extension_config(data: Any, path: Path) -> ExtensionConfig:
+    """Parse the reserved extension namespace.
+
+    Core validates loader controls and table shape only. Individual extensions
+    validate their own `[extensions.<name>]` table after loading.
+    """
+
+    if not isinstance(data, dict):
+        fail_config(path, "[extensions] must be a table")
+
+    allowed_scalars = {"enabled", "paths"}
+    enabled = string_tuple(data.get("enabled", ()), path, "extensions.enabled")
+    paths = string_tuple(data.get("paths", ()), path, "extensions.paths")
+
+    if not all(item.strip() for item in enabled):
+        fail_config(path, "extensions.enabled must not contain empty strings")
+    if not all(item.strip() for item in paths):
+        fail_config(path, "extensions.paths must not contain empty strings")
+    if len(set(enabled)) != len(enabled):
+        fail_config(path, "extensions.enabled must not contain duplicates")
+    if len(set(paths)) != len(paths):
+        fail_config(path, "extensions.paths must not contain duplicates")
+
+    extension_tables: dict[str, dict[str, Any]] = {}
+    for key, value in data.items():
+        if key in allowed_scalars:
+            continue
+        if not isinstance(value, dict):
+            fail_config(path, f"[extensions.{key}] must be a table")
+        if not key.strip():
+            fail_config(path, "extension config names must not be empty")
+        extension_tables[key] = value
+
+    return ExtensionConfig(enabled=enabled, paths=paths, config=extension_tables)
 
 
 def forge_args(

@@ -1,0 +1,225 @@
+# Extensions
+
+Extensions let trusted Python code customize pid without forking it. The API is
+versioned with `PID_EXTENSION_API = "1"`.
+
+## Enable extensions
+
+Install an extension package that exposes the `pid.extensions` entry point, then
+enable it in config:
+
+```toml
+[extensions]
+enabled = ["my_extension"]
+paths = []
+```
+
+For project-local extensions, put Python files in a configured directory:
+
+```toml
+[extensions]
+enabled = ["local_checks"]
+paths = [".pid/extensions"]
+
+[extensions.local_checks]
+command = "mise run check"
+```
+
+Relative `paths` are resolved from the repository root during normal workflow
+runs. Extension commands under `pid x ...` resolve relative paths from the repo
+root when available, otherwise from the current directory.
+
+## Extension protocol
+
+```python
+from pid.extensions import ExtensionRegistry, WorkflowStep
+
+class MyExtension:
+    name = "my_extension"
+    api_version = "1"
+
+    def register(self, registry: ExtensionRegistry) -> None:
+        registry.add_hook("before.run_initial_agent", before_initial)
+        registry.add_step(WorkflowStep("extra_check", extra_check), before="run_pr_loop")
+        registry.replace_step("run_review_agent", custom_review)
+        registry.add_cli_command("doctor", doctor)
+```
+
+An extension object can be exposed as:
+
+- an entry point object or class;
+- `extension = MyExtension()` in a local file;
+- `get_extension()` in a local file;
+- a local class with `name`, `api_version`, and `register()`.
+
+## Registry API
+
+- `add_hook(name, fn, *, order=0)`
+- `add_step(step, *, before=None, after=None)`
+- `replace_step(name, step)`
+- `disable_step(name)`
+- `add_policy(name, policy)`
+- `replace_service(name, factory)`
+- `add_cli_command(name, callback)`
+
+Hook order is deterministic: `order`, extension name, then registration order.
+Hooks and workflow steps must return `None` or `StepResult`; other return values
+stop the run with an extension diagnostic.
+
+## Built-in workflow steps
+
+Project-local extensions load after `resolve_repo_root`, then can hook, add, or
+replace these extension-aware steps:
+
+1. `require_commands`
+2. `resolve_main_worktree`
+3. `validate_clean_main_worktree`
+4. `resolve_default_branch`
+5. `update_default_branch`
+6. `capture_base_rev`
+7. `create_worktree`
+8. `trust_mise`
+9. `run_initial_agent`
+10. `inspect_initial_changes`
+11. `run_review_agent`
+12. `inspect_review_changes`
+13. `stop_if_no_changes`
+14. `generate_message`
+15. `verify_commit_title`
+16. `commit_changes`
+17. `run_pr_loop`
+
+Entry-point extensions load earlier and can also replace or disable bootstrap
+steps, but local extensions intentionally cannot change argument parsing or repo
+resolution.
+
+## Context
+
+Hooks and steps receive `WorkflowContext`. Common fields:
+
+- `ctx.config`
+- `ctx.extension_config`
+- `ctx.parsed`
+- `ctx.branch`
+- `ctx.repo_root`
+- `ctx.main_worktree`
+- `ctx.worktree_path`
+- `ctx.default_branch`
+- `ctx.base_rev`
+- `ctx.commit_message`
+- `ctx.runner`
+- `ctx.repository`
+- `ctx.forge`
+- `ctx.events`
+- `ctx.scratch`
+
+Useful helpers:
+
+- `ctx.require_parsed()`
+- `ctx.require_worktree()`
+- `ctx.repo_path()`
+- `ctx.set_commit_message(message)`
+- `ctx.emit(name, step="...", fields={...})`
+
+## Extension commands
+
+Extensions register commands under `pid x ...`:
+
+```python
+def doctor(ctx):
+    print("extension ok")
+    return 0
+
+class MyExtension:
+    name = "my_extension"
+    api_version = "1"
+
+    def register(self, registry):
+        registry.add_cli_command("doctor", doctor)
+```
+
+Run it:
+
+```sh
+pid x doctor
+```
+
+List enabled extensions:
+
+```sh
+pid x extensions list
+```
+
+## Example: JSON event log
+
+`.pid/extensions/json_log.py`:
+
+```python
+from pathlib import Path
+
+from pid.events import JsonlEventSink
+
+class JsonLogExtension:
+    name = "json_log"
+    api_version = "1"
+
+    def register(self, registry):
+        def install_sink(ctx):
+            path = Path(ctx.repo_root) / ".git" / "pid-events.jsonl"
+            ctx.events = JsonlEventSink(path)
+            return None
+
+        registry.add_hook("before.require_commands", install_sink)
+
+extension = JsonLogExtension()
+```
+
+Config:
+
+```toml
+[extensions]
+enabled = ["json_log"]
+paths = [".pid/extensions"]
+```
+
+## Example: local check before PR
+
+`.pid/extensions/local_checks.py`:
+
+```python
+from pid.extensions import StepResult, WorkflowStep
+from pid.output import write_command_output
+
+class LocalChecksExtension:
+    name = "local_checks"
+    api_version = "1"
+
+    def register(self, registry):
+        registry.add_step(
+            WorkflowStep("run_local_checks", run_local_checks),
+            before="run_pr_loop",
+        )
+
+
+def run_local_checks(ctx):
+    result = ctx.runner.run(["mise", "run", "check"], cwd=ctx.require_worktree())
+    if result.returncode != 0:
+        write_command_output(result)
+        return StepResult.stop(result.returncode, "local checks failed")
+    return None
+
+extension = LocalChecksExtension()
+```
+
+Config:
+
+```toml
+[extensions]
+enabled = ["local_checks"]
+paths = [".pid/extensions"]
+```
+
+## Trust boundary
+
+Extensions run in-process with full Python access to the repository and user
+environment. Only enable extensions you trust.

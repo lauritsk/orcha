@@ -152,6 +152,8 @@ Inspection commands and options:
 | `pid config show` / `--print-config` | Print the loaded config as TOML. Honors `--config PATH`. |
 | `pid config default` / `--print-default-config` | Print built-in default config as TOML. |
 | `pid config path` | Print default/effective config path and session log directory. |
+| `pid x extensions list` | List enabled extensions. |
+| `pid x <extension-command> [ARGS...]` | Run an enabled extension command. |
 | `pid version` / `--version` / `-v` | Print the installed pid version. |
 
 ## How it works
@@ -296,6 +298,10 @@ base_refresh_enabled = true
 base_refresh_stages = ["before_pr"]
 base_refresh_limit = 3
 base_refresh_agent_conflict_fix = true
+
+[extensions]
+enabled = []
+paths = []
 ```
 
 `agent.command`, `forge.command`, and `commit.verifier_command` may be arrays of
@@ -333,6 +339,10 @@ before it considers the run successful. If the forge queued the merge or enabled
 auto-merge, pid polls for up to `workflow.merge_confirmation_timeout_seconds`
 seconds before cleaning up. If confirmation times out, pid exits nonzero and
 leaves the PR/worktree for manual follow-up.
+
+Extensions can hook, add, replace, or disable workflow steps and can register
+commands under `pid x ...`. See [docs/EXTENSIONS.md](docs/EXTENSIONS.md) for the
+API, trust boundary, and runnable local-extension examples.
 
 Prompt templates must be non-blank and support these fields:
 

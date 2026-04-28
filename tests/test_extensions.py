@@ -14,7 +14,7 @@ from pid.errors import PIDAbort
 from pid.extensions import ExtensionError, ExtensionRegistry, StepResult, WorkflowStep
 from pid.models import CommandResult
 from pid.workflow import PIDFlow, command_diagnostic
-from tests.fakes import assert_success, base_state, run_pid
+from tests.fakes import assert_success, base_state, calls, run_pid
 
 
 DEMO_EXTENSION = "\n".join(
@@ -152,6 +152,207 @@ paths = ["{extension_dir}"]
         "initial",
         "message",
     ]
+
+
+def test_project_local_extension_can_replace_pr_loop_substep(
+    tmp_path: Path,
+) -> None:
+    extension_dir = tmp_path / "extensions"
+    extension_dir.mkdir()
+    (extension_dir / "pr_steps.py").write_text(
+        "\n".join(
+            [
+                "from pid.output import echo_out",
+                "",
+                "def before_checks(ctx):",
+                "    echo_out('extension before PR checks')",
+                "",
+                "def skip_checks(ctx):",
+                "    ctx.checks_status = 0",
+                "    ctx.checks_output = 'extension skipped checks'",
+                "",
+                "class PrStepsExtension:",
+                "    name = 'pr_steps'",
+                "    api_version = '1'",
+                "    def register(self, registry):",
+                "        registry.add_hook('before.pr_wait_for_checks', before_checks)",
+                "        registry.replace_step('pr_wait_for_checks', skip_checks)",
+                "",
+                "extension = PrStepsExtension()",
+                "",
+            ]
+        )
+    )
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        f"""
+[extensions]
+enabled = ["pr_steps"]
+paths = ["{extension_dir}"]
+""".strip()
+    )
+    state = base_state(
+        tmp_path,
+        checks_sequence=[{"status": 1, "out": "unit tests failed"}],
+    )
+
+    process, final_state = run_pid(
+        tmp_path,
+        ["--config", str(config_path), "feature/cool-stuff", "prompt"],
+        state=state,
+    )
+
+    assert_success(process)
+    assert "extension before PR checks" in process.stdout
+    assert not calls(final_state, "gh", "pr", "checks")
+    assert not [call for call in final_state["pi_calls"] if call["kind"] == "ci_fix"]
+
+
+def test_project_local_extension_can_replace_pr_loop_policy(
+    tmp_path: Path,
+) -> None:
+    extension_dir = tmp_path / "extensions"
+    extension_dir.mkdir()
+    (extension_dir / "pr_policy.py").write_text(
+        "\n".join(
+            [
+                "def checks_policy(ctx):",
+                "    ctx.checks_status = 0",
+                "    ctx.checks_output = 'policy checks passed'",
+                "",
+                "class PrPolicyExtension:",
+                "    name = 'pr_policy'",
+                "    api_version = '1'",
+                "    def register(self, registry):",
+                "        registry.add_policy('pr.checks', checks_policy)",
+                "",
+                "extension = PrPolicyExtension()",
+                "",
+            ]
+        )
+    )
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        f"""
+[extensions]
+enabled = ["pr_policy"]
+paths = ["{extension_dir}"]
+""".strip()
+    )
+    state = base_state(
+        tmp_path,
+        checks_sequence=[{"status": 1, "out": "unit tests failed"}],
+    )
+
+    process, final_state = run_pid(
+        tmp_path,
+        ["--config", str(config_path), "feature/cool-stuff", "prompt"],
+        state=state,
+    )
+
+    assert_success(process)
+    assert not calls(final_state, "gh", "pr", "checks")
+    assert not [call for call in final_state["pi_calls"] if call["kind"] == "ci_fix"]
+
+
+def test_registry_routes_steps_anchored_to_external_phases() -> None:
+    registry = ExtensionRegistry()
+    registry.add_step(WorkflowStep("top_extra", lambda _ctx: None), after="run_pr_loop")
+    registry.add_step(
+        WorkflowStep("pr_extra", lambda _ctx: None), after="pr_push_branch"
+    )
+
+    top_steps = registry.resolve_steps(
+        [WorkflowStep("run_pr_loop", lambda _ctx: None)],
+        external_steps=("pr_push_branch",),
+    )
+    pr_steps = registry.resolve_steps(
+        [WorkflowStep("pr_push_branch", lambda _ctx: None)],
+        external_steps=("run_pr_loop",),
+        include_unanchored=False,
+    )
+
+    assert [step.name for step in top_steps] == ["run_pr_loop", "top_extra"]
+    assert [step.name for step in pr_steps] == ["pr_push_branch", "pr_extra"]
+
+
+def test_project_local_extension_can_disable_pr_cleanup_without_looping(
+    tmp_path: Path,
+) -> None:
+    extension_dir = tmp_path / "extensions"
+    extension_dir.mkdir()
+    (extension_dir / "no_cleanup.py").write_text(
+        "\n".join(
+            [
+                "class NoCleanupExtension:",
+                "    name = 'no_cleanup'",
+                "    api_version = '1'",
+                "    def register(self, registry):",
+                "        registry.disable_step('pr_cleanup')",
+                "",
+                "extension = NoCleanupExtension()",
+                "",
+            ]
+        )
+    )
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        f"""
+[extensions]
+enabled = ["no_cleanup"]
+paths = ["{extension_dir}"]
+""".strip()
+    )
+
+    process, final_state = run_pid(
+        tmp_path,
+        ["--config", str(config_path), "feature/cool-stuff", "prompt"],
+    )
+
+    assert_success(process)
+    assert final_state["merged_at_queries"] == 1
+    assert not calls(final_state, "git", "worktree", "remove")
+    assert not calls(final_state, "git", "branch", "-D")
+    assert not [
+        call for call in calls(final_state, "git", "push") if "--delete" in call["args"]
+    ]
+
+
+def test_project_local_extension_terminal_pr_loop_misconfiguration_errors(
+    tmp_path: Path,
+) -> None:
+    extension_dir = tmp_path / "extensions"
+    extension_dir.mkdir()
+    (extension_dir / "no_merge.py").write_text(
+        "\n".join(
+            [
+                "class NoMergeExtension:",
+                "    name = 'no_merge'",
+                "    api_version = '1'",
+                "    def register(self, registry):",
+                "        registry.disable_step('pr_squash_merge')",
+                "",
+                "extension = NoMergeExtension()",
+                "",
+            ]
+        )
+    )
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        f"""
+[extensions]
+enabled = ["no_merge"]
+paths = ["{extension_dir}"]
+""".strip()
+    )
+
+    process, _ = run_pid(
+        tmp_path,
+        ["--config", str(config_path), "feature/cool-stuff", "prompt"],
+    )
+
+    assert process.returncode == 2
+    assert "PR loop did not complete or request another iteration" in process.stderr
 
 
 def test_pid_x_dispatches_project_local_extension_command(tmp_path: Path) -> None:

@@ -89,6 +89,36 @@ replace these extension-aware steps:
 16. `commit_changes`
 17. `run_pr_loop`
 
+`run_pr_loop` is itself split into hookable/replaceable substeps:
+
+1. `pr_prepare_attempt`
+2. `pr_refresh_base_before_message`
+3. `pr_regenerate_message`
+4. `pr_refresh_base_before_pr`
+5. `pr_push_branch`
+6. `pr_ensure_pr`
+7. `pr_wait_for_checks`
+8. `pr_handle_checks`
+9. `pr_refresh_base_after_checks`
+10. `pr_squash_merge`
+11. `pr_recover_merge`
+12. `pr_confirm_merge`
+13. `pr_cleanup`
+
+PR-loop policy names are `pr.push`, `pr.ensure_pr`, `pr.checks`, `pr.ci_fix`,
+`pr.base_refresh`, `pr.merge`, `pr.merge_recovery`, `pr.merge_confirmation`, and
+`pr.cleanup`. Register a callable with `registry.add_policy(name, fn)` to replace
+one behavior while keeping surrounding hooks and loop control. Policy callables
+receive `WorkflowContext` and return `None` or `StepResult`; replacements should
+update the same context fields as the default policy, such as `ctx.checks_status`
+/ `ctx.checks_output`, `ctx.pr_loop.refresh_result`,
+`ctx.pr_loop.merge_result`, or `ctx.pr_loop.merge_confirmed`. Replacements that
+short-circuit terminal substeps must set either `ctx.pr_loop.completed` or
+`ctx.pr_loop.next_iteration`; otherwise pid reports an extension error instead
+of looping forever. If `pr_cleanup` is disabled or skipped after merge
+confirmation, pid treats the PR loop as complete and leaves cleanup to the
+extension or operator.
+
 Entry-point extensions load earlier and can also replace or disable bootstrap
 steps, but local extensions intentionally cannot change argument parsing or repo
 resolution.
@@ -112,6 +142,9 @@ Hooks and steps receive `WorkflowContext`. Common fields:
 - `ctx.forge`
 - `ctx.events`
 - `ctx.scratch`
+- `ctx.pr_loop` for PR-loop state such as `need_force_push`,
+  `refresh_result`, `checks_timeout_seconds`, `merge_result`,
+  `merge_confirmed`, `next_iteration`, and `completed`
 
 Useful helpers:
 

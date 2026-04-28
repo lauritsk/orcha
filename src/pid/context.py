@@ -12,9 +12,28 @@ from pid.events import EventSink, NullEventSink, WorkflowEvent
 from pid.extensions import ExtensionRegistry
 from pid.github import Forge
 from pid.keepawake import KeepAwake
-from pid.models import CommitMessage, OutputMode, ParsedArgs
+from pid.models import CommandResult, CommitMessage, OutputMode, ParsedArgs
 from pid.repository import Repository
 from pid.session_logging import SessionLogger
+
+
+@dataclass
+class PRLoopState:
+    """Mutable state for fine-grained PR-loop extension points."""
+
+    need_force_push: bool = False
+    message_state_hash: str = ""
+    refresh_stage: str = ""
+    refresh_result: str = ""
+    refreshed_before_message: bool = False
+    checks_timeout_seconds: int = 0
+    checks_poll_interval_seconds: int = 0
+    merge_retry_limit: int = 0
+    merge_result: CommandResult | None = None
+    pr_head_oid: str = ""
+    merge_confirmed: bool = False
+    next_iteration: bool = False
+    completed: bool = False
 
 
 @dataclass
@@ -58,6 +77,7 @@ class WorkflowContext:
     services: dict[str, Any] = field(default_factory=dict)
     scratch: dict[str, Any] = field(default_factory=dict)
     step_retries: dict[str, int] = field(default_factory=dict)
+    pr_loop: PRLoopState = field(default_factory=PRLoopState)
 
     @property
     def extension_config(self) -> dict[str, dict[str, Any]]:

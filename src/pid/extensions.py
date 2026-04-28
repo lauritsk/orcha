@@ -206,13 +206,16 @@ class ExtensionRegistry:
         default_steps: Iterable[WorkflowStep],
         *,
         known_steps: Iterable[str] = (),
+        external_steps: Iterable[str] = (),
+        include_unanchored: bool = True,
     ) -> list[WorkflowStep]:
         """Return default steps after applying extension modifications."""
 
         steps = list(default_steps)
         self._validate_unique_steps(steps)
         default_names = {step.name for step in steps}
-        known_step_names = set(known_steps)
+        external_step_names = set(external_steps)
+        known_step_names = set(known_steps) | external_step_names
         missing_replacements = (
             set(self.replaced_steps) - default_names - known_step_names
         )
@@ -235,6 +238,8 @@ class ExtensionRegistry:
             if insertion.step.name in names:
                 raise ExtensionError(f"step already registered: {insertion.step.name}")
             if insertion.before is not None:
+                if insertion.before in external_step_names:
+                    continue
                 if insertion.before not in names:
                     raise ExtensionError(
                         f"cannot add step before unknown step: {insertion.before}"
@@ -242,13 +247,16 @@ class ExtensionRegistry:
                 resolved.insert(names.index(insertion.before), insertion.step)
                 continue
             if insertion.after is not None:
+                if insertion.after in external_step_names:
+                    continue
                 if insertion.after not in names:
                     raise ExtensionError(
                         f"cannot add step after unknown step: {insertion.after}"
                     )
                 resolved.insert(names.index(insertion.after) + 1, insertion.step)
                 continue
-            resolved.append(insertion.step)
+            if include_unanchored:
+                resolved.append(insertion.step)
 
         self._validate_unique_steps(resolved)
         return resolved

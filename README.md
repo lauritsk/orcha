@@ -340,9 +340,12 @@ auto-merge, pid polls for up to `workflow.merge_confirmation_timeout_seconds`
 seconds before cleaning up. If confirmation times out, pid exits nonzero and
 leaves the PR/worktree for manual follow-up.
 
-Extensions can hook, add, replace, or disable workflow steps and can register
-commands under `pid x ...`. See [docs/EXTENSIONS.md](docs/EXTENSIONS.md) for the
-API, trust boundary, and runnable local-extension examples.
+Extensions can hook, add, replace, or disable workflow steps, including
+fine-grained PR-loop substeps for push, PR updates, checks, base refresh, merge,
+merge confirmation, merge recovery, and cleanup. Extensions can also replace
+named PR-loop policies and register commands under `pid x ...`. See
+[docs/EXTENSIONS.md](docs/EXTENSIONS.md) for the API, trust boundary, and
+runnable local-extension examples.
 
 Prompt templates must be non-blank and support these fields:
 

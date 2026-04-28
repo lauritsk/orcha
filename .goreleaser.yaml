@@ -21,9 +21,6 @@ dockers_v2:
     platforms:
       - linux/amd64
       - linux/arm64
-    extra_files:
-      - pyproject.toml
-      - uv.lock
     labels:
       org.opencontainers.image.created: "{{ .Date }}"
       org.opencontainers.image.description: agent orchestration tool

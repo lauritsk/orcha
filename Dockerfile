@@ -5,11 +5,10 @@ ARG TARGETPLATFORM
 COPY --from=uv /usr/local/bin/uv /usr/local/bin/
 WORKDIR /app
 
-COPY pyproject.toml uv.lock ./
+RUN python -m venv /app/.venv
 # GoReleaser dockers_v2 provides the built wheel under $TARGETPLATFORM/.
 COPY ${TARGETPLATFORM}/*.whl /tmp/
-RUN uv sync --locked --no-dev --no-install-project \
-    && uv pip install --python /app/.venv/bin/python --no-deps /tmp/*.whl
+RUN uv pip install --python /app/.venv/bin/python /tmp/*.whl
 
 FROM dhi.io/python:3.14.4-debian13@sha256:0d5b16a6304ae84e58b163a0daf4b7dec6df8c829302d8f72948ab131593034e
 ENV PYTHONDONTWRITEBYTECODE=1 \

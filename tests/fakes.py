@@ -188,10 +188,27 @@ def cmd_git(state, original_args):
         finish(state, 0, str(state.get("commit_count", 0)))
 
     if args[:2] == ["merge-base", "--is-ancestor"]:
+        ancestor = args[2]
+        descendant = args[3]
+        if ancestor == descendant:
+            finish(state, 0)
+        ancestor_map = state.get("ancestor_map", {})
+        key = f"{ancestor}..{descendant}"
+        if key in ancestor_map:
+            finish(state, 0 if ancestor_map[key] else 1)
         if state.get("base_is_ancestor_sequence"):
             item = state["base_is_ancestor_sequence"].pop(0)
             state["base_is_ancestor"] = bool(item)
         finish(state, 0 if state.get("base_is_ancestor", True) else 1)
+
+    if args[:3] == ["ls-remote", "--heads", "origin"]:
+        branch = args[3]
+        oid = state.get("remote_branch_oid", "")
+        if state.get("ls_remote_fail"):
+            finish(state, 1, err="ls-remote failed")
+        if oid:
+            finish(state, 0, f"{oid}\trefs/heads/{branch}")
+        finish(state)
 
     if args == ["diff", "--binary", "--no-ext-diff"]:
         finish(state, 0, state.get("worktree_diff", ""))
@@ -235,6 +252,10 @@ def cmd_git(state, original_args):
     if args and args[0] == "push":
         if state.get("push_fail"):
             finish(state, 1, err="push failed")
+        if "--delete" in args:
+            state["remote_branch_oid"] = ""
+        else:
+            state["remote_branch_oid"] = state.get("head", state["base_rev"])
         finish(state)
 
     if args and args[0] == "fetch":
@@ -422,6 +443,11 @@ def cmd_pi(state, args):
 
     if kind == "initial" and state.get("initial_pi_commit_count") is not None:
         state["commit_count"] = state["initial_pi_commit_count"]
+        state["head"] = state.get(
+            "initial_pi_head", f"agent-commit-{state['initial_pi_commit_count']}"
+        )
+    if kind == "initial" and state.get("initial_push_remote_oid"):
+        state["remote_branch_oid"] = state["initial_push_remote_oid"]
 
     if kind == "review":
         if state.get("review_changes"):

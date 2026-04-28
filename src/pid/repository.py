@@ -258,10 +258,33 @@ class Repository:
     def contains_ref(self, worktree_path: str, ref: str) -> bool:
         """Return true when HEAD contains ref."""
 
+        return self.is_ancestor(worktree_path, ref, "HEAD")
+
+    def is_ancestor(self, worktree_path: str, ancestor: str, descendant: str) -> bool:
+        """Return true when ancestor is reachable from descendant."""
+
         result = self.runner.run(
-            ["git", "merge-base", "--is-ancestor", ref, "HEAD"], cwd=worktree_path
+            ["git", "merge-base", "--is-ancestor", ancestor, descendant],
+            cwd=worktree_path,
         )
         return result.returncode == 0
+
+    def remote_branch_oid(self, worktree_path: str, branch: str) -> str:
+        """Return origin branch object ID, or empty string when branch is absent."""
+
+        result = self.runner.run(
+            ["git", "ls-remote", "--heads", "origin", branch], cwd=worktree_path
+        )
+        if result.returncode != 0:
+            write_command_output(result)
+            abort(result.returncode)
+
+        branch_ref = f"refs/heads/{branch}"
+        for line in result.stdout.splitlines():
+            parts = line.split()
+            if len(parts) >= 2 and parts[1] == branch_ref:
+                return parts[0]
+        return ""
 
     def rebase_in_progress(self, worktree_path: str) -> bool:
         """Return true when git reports a rebase state directory."""

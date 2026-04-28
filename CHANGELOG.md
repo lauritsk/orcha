@@ -2,6 +2,18 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## [v0.7.1](https://github.com/lauritsk/pid/compare/ea7e7a2dd74be40b0a263f75efa94800a63111b4..v0.7.1) - 2026-04-28
+#### Bug Fixes
+- (**docker**) run pid by default - ([fdaff42](https://github.com/lauritsk/pid/commit/fdaff42193e1fcfd42e95ef28e9a6b7df9bd58a3)) - Karl Hans Laurits
+#### Revert
+- ci: skip check workflow for version bumpsThis reverts commit ea7e7a2dd74be40b0a263f75efa94800a63111b4. - ([7e489ee](https://github.com/lauritsk/pid/commit/7e489eeb83e596e74a5b53d15dcb53b8e09df50c)) - Karl Hans Laurits
+#### Documentation
+- move plans under docs/ and remove legacy todo and plan files - ([c039f99](https://github.com/lauritsk/pid/commit/c039f99b5fb74aab7ae1b8f044266190c579dd34)) - Karl Hans Laurits
+#### Continuous Integration
+- skip check workflow for version bumps - ([ea7e7a2](https://github.com/lauritsk/pid/commit/ea7e7a2dd74be40b0a263f75efa94800a63111b4)) - Karl Hans Laurits
+
+- - -
+
 ## [v0.7.0](https://github.com/lauritsk/pid/compare/2dece949994939cbd0f8a0c46760cac36004f892..v0.7.0) - 2026-04-28
 #### Features
 - publish container image to GHCR - ([ca978ee](https://github.com/lauritsk/pid/commit/ca978ee18dc52a84424651b571a4220be18505dd)) - Karl Hans Laurits

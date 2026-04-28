@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## [v0.7.3](https://github.com/lauritsk/pid/compare/c3859bf9bf9600f41fb7c49b0228052752fd7ef7..v0.7.3) - 2026-04-28
+#### Bug Fixes
+- handle agent-pushed session branches (#33) - ([96307a0](https://github.com/lauritsk/pid/commit/96307a0155d41ea868186923901af468b66a056a)) - Karl Hans Laurits
+#### Miscellaneous Chores
+- update mise tools - ([c3859bf](https://github.com/lauritsk/pid/commit/c3859bf9bf9600f41fb7c49b0228052752fd7ef7)) - Karl Hans Laurits
+
+- - -
+
 ## [v0.7.2](https://github.com/lauritsk/pid/compare/9adf05d13c3717fc8fc7c7deeb3f2f4133950e13..v0.7.2) - 2026-04-28
 #### Bug Fixes
 - use built wheel in release image - ([47dbef8](https://github.com/lauritsk/pid/commit/47dbef88cdb8549e0032a5fca26de6a407aca250)) - Karl Hans Laurits

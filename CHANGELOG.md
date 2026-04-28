@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## [v0.7.2](https://github.com/lauritsk/pid/compare/9adf05d13c3717fc8fc7c7deeb3f2f4133950e13..v0.7.2) - 2026-04-28
+#### Bug Fixes
+- use built wheel in release image - ([47dbef8](https://github.com/lauritsk/pid/commit/47dbef88cdb8549e0032a5fca26de6a407aca250)) - Karl Hans Laurits
+#### Miscellaneous Chores
+- update pid tool locally - ([9adf05d](https://github.com/lauritsk/pid/commit/9adf05d13c3717fc8fc7c7deeb3f2f4133950e13)) - Karl Hans Laurits
+
+- - -
+
 ## [v0.7.1](https://github.com/lauritsk/pid/compare/ea7e7a2dd74be40b0a263f75efa94800a63111b4..v0.7.1) - 2026-04-28
 #### Bug Fixes
 - (**docker**) run pid by default - ([fdaff42](https://github.com/lauritsk/pid/commit/fdaff42193e1fcfd42e95ef28e9a6b7df9bd58a3)) - Karl Hans Laurits

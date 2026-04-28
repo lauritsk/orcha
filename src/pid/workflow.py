@@ -201,7 +201,14 @@ class PIDFlow:
         )
         self.verify_commit_title(commit_message)
 
+        pre_commit_head = self.repository.output(
+            ["rev-parse", "HEAD"], cwd=worktree_path
+        ).strip()
         self.repository.commit_initial_changes(base_rev, worktree_path, commit_message)
+        post_commit_head = self.repository.output(
+            ["rev-parse", "HEAD"], cwd=worktree_path
+        ).strip()
+        rewritten_head = pre_commit_head if pre_commit_head != post_commit_head else ""
         commit_title = self.repository.output(
             ["log", "-1", "--format=%s"], cwd=worktree_path
         ).strip()
@@ -211,6 +218,7 @@ class PIDFlow:
             base_rev=base_rev,
             commit_message=commit_message,
             commit_title=commit_title,
+            rewritten_head=rewritten_head,
             followup_thinking_level=followup_thinking_level,
             main_worktree=main_worktree,
             default_branch=default_branch,
@@ -314,6 +322,7 @@ class PIDFlow:
         base_rev: str,
         commit_message: CommitMessage,
         commit_title: str,
+        rewritten_head: str,
         followup_thinking_level: str,
         main_worktree: str,
         default_branch: str,
@@ -417,23 +426,13 @@ class PIDFlow:
                 self.verify_commit_title(commit_message)
                 message_state_hash = self.repository.state_hash(worktree_path)
 
-            if need_force_push:
-                self.runner.require(
-                    [
-                        "git",
-                        "push",
-                        "--force-with-lease",
-                        "-u",
-                        "origin",
-                        parsed.branch,
-                    ],
-                    cwd=worktree_path,
-                )
-                need_force_push = False
-            else:
-                self.runner.require(
-                    ["git", "push", "-u", "origin", parsed.branch], cwd=worktree_path
-                )
+            self.push_pr_branch(
+                branch=parsed.branch,
+                worktree_path=worktree_path,
+                force=need_force_push,
+                rewritten_head=rewritten_head,
+            )
+            need_force_push = False
 
             self.forge.ensure_pr(parsed.branch, commit_message, worktree_path)
             pr_title = commit_message.title
@@ -607,6 +606,60 @@ class PIDFlow:
 
         echo_err(
             f"pid: exhausted {parsed.max_attempts} attempts; leaving worktree: {worktree_path}"
+        )
+        abort(1)
+
+    def push_pr_branch(
+        self, *, branch: str, worktree_path: str, force: bool, rewritten_head: str
+    ) -> None:
+        """Push a PR branch, safely tolerating agent-pushed rewritten history."""
+
+        if force:
+            self.runner.require(
+                ["git", "push", "--force-with-lease", "-u", "origin", branch],
+                cwd=worktree_path,
+            )
+            return
+
+        remote_oid = self.repository.remote_branch_oid(worktree_path, branch)
+        if not remote_oid:
+            self.runner.require(
+                ["git", "push", "-u", "origin", branch], cwd=worktree_path
+            )
+            return
+
+        local_head = self.repository.output(
+            ["rev-parse", "HEAD"], cwd=worktree_path
+        ).strip()
+        if self.repository.is_ancestor(worktree_path, remote_oid, local_head):
+            self.runner.require(
+                ["git", "push", "-u", "origin", branch], cwd=worktree_path
+            )
+            return
+
+        if rewritten_head and self.repository.is_ancestor(
+            worktree_path, remote_oid, rewritten_head
+        ):
+            echo_out(
+                "pid: remote branch contains agent-pushed rewritten history; "
+                "using force-with-lease"
+            )
+            self.runner.require(
+                [
+                    "git",
+                    "push",
+                    f"--force-with-lease=refs/heads/{branch}:{remote_oid}",
+                    "-u",
+                    "origin",
+                    branch,
+                ],
+                cwd=worktree_path,
+            )
+            return
+
+        echo_err(
+            "pid: remote branch changed unexpectedly; refusing to overwrite "
+            f"origin/{branch}"
         )
         abort(1)
 

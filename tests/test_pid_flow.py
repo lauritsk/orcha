@@ -498,6 +498,57 @@ def test_session_mode_runs_interactive_pi_then_resumes_flow(tmp_path: Path) -> N
     assert final_state["pi_calls"][1]["kind"] == "review"
 
 
+def test_session_mode_force_with_lease_pushes_agent_rewritten_branch(
+    tmp_path: Path,
+) -> None:
+    state = base_state(
+        tmp_path,
+        initial_pi_commit_count=1,
+        initial_pi_head="agent123",
+        initial_push_remote_oid="agent123",
+        ancestor_map={
+            "agent123..commit-1": False,
+        },
+    )
+
+    process, final_state = run_pid(
+        tmp_path, ["session", "feature/cool-stuff"], state=state
+    )
+
+    assert_success(process)
+    assert "agent-pushed rewritten history" in process.stdout
+    assert [
+        "push",
+        "--force-with-lease=refs/heads/feature/cool-stuff:agent123",
+        "-u",
+        "origin",
+        "feature/cool-stuff",
+    ] in [call["args"] for call in calls(final_state, "git", "push")]
+
+
+def test_session_mode_refuses_unrelated_remote_branch_after_agent(
+    tmp_path: Path,
+) -> None:
+    state = base_state(
+        tmp_path,
+        initial_pi_commit_count=1,
+        initial_pi_head="agent123",
+        initial_push_remote_oid="other456",
+        ancestor_map={
+            "other456..commit-1": False,
+            "other456..agent123": False,
+        },
+    )
+
+    process, final_state = run_pid(
+        tmp_path, ["session", "feature/cool-stuff"], state=state
+    )
+
+    assert process.returncode == 1
+    assert "remote branch changed unexpectedly" in process.stderr
+    assert not calls(final_state, "gh", "pr", "create")
+
+
 def test_session_mode_allows_no_initial_prompt(tmp_path: Path) -> None:
     state = base_state(tmp_path, pi_fail_kinds=["review"], pi_fail_status=17)
 

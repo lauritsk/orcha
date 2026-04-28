@@ -19,4 +19,3 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /workspace
 COPY --from=builder /app/.venv /app/.venv
 ENTRYPOINT ["pid"]
-CMD ["--help"]

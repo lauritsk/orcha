@@ -33,6 +33,10 @@ Use `mise` tasks rather than invoking tools directly:
 | `mise run release:bump` | Bump the package version. |
 | `mise run release:publish` | Publish a tagged release. |
 
+`mise run release:publish` also publishes the GHCR image. Release CI requires
+repository secrets `DHI_USERNAME` and `DHI_PASSWORD` so GoReleaser can pull
+Docker Hardened Images from `dhi.io`.
+
 The CLI can be run from a checkout with:
 
 ```sh

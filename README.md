@@ -55,6 +55,18 @@ Install from a local checkout:
 uv tool install .
 ```
 
+Container images are published to GHCR:
+
+```sh
+docker pull ghcr.io/lauritsk/pid:latest
+docker run --rm ghcr.io/lauritsk/pid:latest --version
+```
+
+The image entrypoint is `pid` and uses Docker Hardened Images for the Python
+runtime. It is intentionally minimal; provide `git`, your forge CLI, agent CLI,
+and commit-title verifier in a derived image or host environment for full
+workflow runs.
+
 For development, use `mise` from the repository root. `mise run test` runs
 pytest in parallel with the repository coverage gate:
 
@@ -436,6 +448,9 @@ mise run check
 Use `mise run fix` to run hk-managed formatters and fixers. Release helpers are
 namespaced under `release:*`: use `mise run release:bump` to bump the package
 version and `mise run release:publish` to publish a tagged release.
+Tagged releases also publish `ghcr.io/lauritsk/pid` with GoReleaser `dockers_v2`.
+The release workflow logs in to `dhi.io` before pulling Docker Hardened Images;
+configure `DHI_USERNAME` and `DHI_PASSWORD` repository secrets.
 
 ### Project layout
 

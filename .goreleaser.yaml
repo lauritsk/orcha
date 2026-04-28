@@ -9,8 +9,35 @@ builds:
     builder: uv
     buildmode: sdist
 
+dockers_v2:
+  - id: ghcr
+    ids:
+      - wheel
+    images:
+      - ghcr.io/lauritsk/pid
+    tags:
+      - "{{ .Version }}"
+      - "{{ if not .Prerelease }}latest{{ end }}"
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    extra_files:
+      - pyproject.toml
+      - uv.lock
+    labels:
+      org.opencontainers.image.created: "{{ .Date }}"
+      org.opencontainers.image.description: agent orchestration tool
+      org.opencontainers.image.licenses: MIT
+      org.opencontainers.image.name: "{{ .ProjectName }}"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.source: "{{ .GitURL }}"
+      org.opencontainers.image.version: "{{ .Version }}"
+
 checksum:
   name_template: "{{ .ProjectName }}_checksums.txt"
+
+docker_digest:
+  name_template: digests.txt
 
 sboms:
   - artifacts: any

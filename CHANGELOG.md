@@ -2,6 +2,16 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## [v0.7.0](https://github.com/lauritsk/pid/compare/2dece949994939cbd0f8a0c46760cac36004f892..v0.7.0) - 2026-04-28
+#### Features
+- publish container image to GHCR - ([ca978ee](https://github.com/lauritsk/pid/commit/ca978ee18dc52a84424651b571a4220be18505dd)) - Karl Hans Laurits
+#### Documentation
+- add agent instructions - ([742d88d](https://github.com/lauritsk/pid/commit/742d88daf00ce070d66433cb0cbb092c14f74f8a)) - Karl Hans Laurits
+#### Miscellaneous Chores
+- update pid tool here - ([2dece94](https://github.com/lauritsk/pid/commit/2dece949994939cbd0f8a0c46760cac36004f892)) - Karl Hans Laurits
+
+- - -
+
 ## [v0.6.0](https://github.com/lauritsk/pid/compare/171037d7bcf9787cb8cfb0166317d22ab8cc5408..v0.6.0) - 2026-04-27
 #### Features
 - improve CLI output structure and visuals - ([84ef18f](https://github.com/lauritsk/pid/commit/84ef18f3769841ec3d1e01b1e5adad04977cede7)) - Karl Hans Laurits

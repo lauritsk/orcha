@@ -29,12 +29,28 @@ def config_to_toml(config: PIDConfig) -> str:
     lines: list[str] = []
     for section in fields(config):
         value = getattr(config, section.name)
+        if section.name == "extensions":
+            lines.extend(_extensions_to_toml(value))
+            continue
         lines.append(f"[{section.name}]")
         for item in fields(value):
             item_value = getattr(value, item.name)
             lines.append(f"{item.name} = {_toml_value(item_value)}")
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _extensions_to_toml(value: Any) -> list[str]:
+    lines = ["[extensions]"]
+    lines.append(f"enabled = {_toml_value(value.enabled)}")
+    lines.append(f"paths = {_toml_value(value.paths)}")
+    lines.append("")
+    for name, table in value.config.items():
+        lines.append(f"[extensions.{name}]")
+        for key, item_value in table.items():
+            lines.append(f"{key} = {_toml_value(item_value)}")
+        lines.append("")
+    return lines
 
 
 def print_config_metadata(*, config_path: Path | None = None) -> str:
@@ -152,10 +168,15 @@ def _toml_value(value: Any) -> str:
         return "true" if value else "false"
     if isinstance(value, int):
         return str(value)
+    if isinstance(value, float):
+        return str(value)
     if isinstance(value, str):
         return json.dumps(value)
     if isinstance(value, tuple | list):
         return "[" + ", ".join(_toml_value(item) for item in value) + "]"
+    if isinstance(value, dict):
+        items = [f"{key} = {_toml_value(item)}" for key, item in value.items()]
+        return "{ " + ", ".join(items) + " }"
     if is_dataclass(value) and not isinstance(value, type):
         return _toml_value(dataclasses.asdict(value))
     raise TypeError(f"unsupported TOML value: {value!r}")

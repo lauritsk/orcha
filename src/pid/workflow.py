@@ -9,7 +9,18 @@ from pathlib import Path
 
 from pid.commands import CommandRunner, require_command
 from pid.config import PIDConfig
+from pid.context import WorkflowContext
 from pid.errors import PIDAbort, abort
+from pid.events import EventSink, NullEventSink
+from pid.extensions import (
+    ExtensionError,
+    ExtensionRegistry,
+    StepResult,
+    WorkflowStep,
+    abort_extension_error,
+    load_enabled_extensions,
+    normalize_step_result,
+)
 from pid.github import Forge
 from pid.keepawake import KeepAwake
 from pid.messages import parse_commit_message
@@ -49,16 +60,32 @@ class PIDFlow:
         runner: CommandRunner | None = None,
         config: PIDConfig | None = None,
         output_mode: OutputMode = OutputMode.NORMAL,
+        registry: ExtensionRegistry | None = None,
+        events: EventSink | None = None,
+        load_extensions: bool = True,
     ) -> None:
         self.runner = runner or CommandRunner()
         self.runner.set_output_mode(output_mode)
         self.config = config or PIDConfig()
+        self.registry = registry or ExtensionRegistry()
+        if load_extensions:
+            try:
+                load_enabled_extensions(
+                    self.config.extensions,
+                    self.registry,
+                    include_local=False,
+                    fail_missing=False,
+                )
+            except ExtensionError as error:
+                abort_extension_error(error)
+        self.events = events or NullEventSink()
         self.repository = Repository(self.runner)
         self.forge = Forge(self.runner, self.config.forge)
         self.review_rejected_first_pass = False
         self.session_logger: SessionLogger | None = None
         self.keep_awake: KeepAwake | None = None
         self.output_mode = output_mode
+        self.context: WorkflowContext | None = None
 
     def run(self, argv: list[str]) -> int:
         exit_code = 0
@@ -66,6 +93,11 @@ class PIDFlow:
             self._run(argv)
         except PIDAbort as error:
             exit_code = error.code
+        except ExtensionError as error:
+            exit_code = 2
+            echo_err(f"pid: {error}")
+            if self.session_logger is not None:
+                self.session_logger.event(f"extension error: {error}")
         except Exception as error:
             exit_code = 1
             if self.session_logger is not None:
@@ -85,13 +117,179 @@ class PIDFlow:
         return exit_code
 
     def _run(self, argv: list[str]) -> None:
+        ctx = WorkflowContext(
+            argv=argv,
+            config=self.config,
+            runner=self.runner,
+            repository=self.repository,
+            forge=self.forge,
+            registry=self.registry,
+            output_mode=self.output_mode,
+            events=self.events,
+        )
+        self.context = ctx
+        ctx.emit("workflow.created")
+        try:
+            bootstrap_steps = self.bootstrap_steps()
+            for step in bootstrap_steps:
+                self.run_workflow_step(ctx, step)
+            self.load_project_extensions(ctx)
+            self.apply_service_replacements(ctx)
+            for step in self.registry.resolve_steps(
+                self.default_steps(),
+                known_steps=(step.name for step in bootstrap_steps),
+            ):
+                self.run_workflow_step(ctx, step)
+            ctx.emit("workflow.completed")
+        except Exception as error:
+            ctx.emit(
+                "workflow.failed",
+                level="error",
+                fields={"error": f"{type(error).__name__}: {error}"},
+            )
+            raise
+
+    def bootstrap_steps(self) -> list[WorkflowStep]:
+        """Return fixed pre-extension steps needed to find project extensions."""
+
+        return [
+            WorkflowStep("parse_args", self.step_parse_args),
+            WorkflowStep("start_session_logging", self.step_start_session_logging),
+            WorkflowStep("start_keep_awake", self.step_start_keep_awake),
+            WorkflowStep("render_run_summary", self.step_render_run_summary),
+            WorkflowStep("validate_branch", self.step_validate_branch),
+            WorkflowStep("resolve_repo_root", self.step_resolve_repo_root),
+        ]
+
+    def default_steps(self) -> list[WorkflowStep]:
+        """Return extension-aware steps after repository resolution."""
+
+        return [
+            WorkflowStep("require_commands", self.step_require_commands),
+            WorkflowStep("resolve_main_worktree", self.step_resolve_main_worktree),
+            WorkflowStep(
+                "validate_clean_main_worktree",
+                self.step_validate_clean_main_worktree,
+            ),
+            WorkflowStep("resolve_default_branch", self.step_resolve_default_branch),
+            WorkflowStep("update_default_branch", self.step_update_default_branch),
+            WorkflowStep("capture_base_rev", self.step_capture_base_rev),
+            WorkflowStep("create_worktree", self.step_create_worktree),
+            WorkflowStep("trust_mise", self.step_trust_mise),
+            WorkflowStep("run_initial_agent", self.step_run_initial_agent),
+            WorkflowStep("inspect_initial_changes", self.step_inspect_initial_changes),
+            WorkflowStep("run_review_agent", self.step_run_review_agent),
+            WorkflowStep("inspect_review_changes", self.step_inspect_review_changes),
+            WorkflowStep("stop_if_no_changes", self.step_stop_if_no_changes),
+            WorkflowStep("generate_message", self.step_generate_message),
+            WorkflowStep("verify_commit_title", self.step_verify_commit_title),
+            WorkflowStep("commit_changes", self.step_commit_changes),
+            WorkflowStep("run_pr_loop", self.step_run_pr_loop),
+        ]
+
+    def run_workflow_step(self, ctx: WorkflowContext, step: WorkflowStep) -> None:
+        """Run one step with hooks, events, replacements, and bounded retry."""
+
+        if step.name in self.registry.disabled_steps:
+            return
+        step = self.registry.replaced_steps.get(step.name, step)
+        retries = 0
+        while True:
+            ctx.emit("step.started", step=step.name)
+            before_result = self.registry.run_hooks(f"before.{step.name}", ctx)
+            if before_result.action == "skip":
+                ctx.emit("step.skipped", step=step.name, message=before_result.reason)
+                return
+            self.handle_step_result(before_result)
+            try:
+                result = normalize_step_result(step.run(ctx))
+            except Exception as error:
+                ctx.emit(
+                    "step.failed",
+                    step=step.name,
+                    level="error",
+                    fields={"error": f"{type(error).__name__}: {error}"},
+                )
+                error_result = self.registry.run_hooks(f"error.{step.name}", ctx)
+                if error_result.action != "continue":
+                    self.handle_step_result(error_result)
+                raise
+            after_result = self.registry.run_hooks(f"after.{step.name}", ctx)
+            if after_result.action != "continue":
+                result = after_result
+            if result.action == "retry":
+                retries += 1
+                if retries > 3:
+                    echo_err(f"pid: step retry limit reached: {step.name}")
+                    abort(1)
+                ctx.emit("step.retrying", step=step.name, message=result.reason)
+                continue
+            self.handle_step_result(result)
+            ctx.emit("step.completed", step=step.name)
+            return
+
+    @staticmethod
+    def handle_step_result(result: StepResult) -> None:
+        """Apply a step or hook result."""
+
+        if result.action == "continue" or result.action == "skip":
+            return
+        if result.action == "stop":
+            abort(result.code)
+        if result.action == "retry":
+            return
+        raise ExtensionError(f"unknown step result action: {result.action}")
+
+    def load_project_extensions(self, ctx: WorkflowContext) -> None:
+        """Load configured project-local extensions after repo resolution."""
+
+        load_enabled_extensions(
+            self.config.extensions,
+            self.registry,
+            repo_root=Path(ctx.repo_root),
+            include_entry_points=False,
+            include_local=True,
+            fail_missing=True,
+        )
+
+    def apply_service_replacements(self, ctx: WorkflowContext) -> None:
+        """Apply extension-provided service replacements before preflight."""
+
+        for name, factory in self.registry.service_factories.items():
+            service = factory(ctx)
+            ctx.services[name] = service
+            if name == "runner":
+                self.runner = service
+                self.runner.set_output_mode(self.output_mode)
+                if self.session_logger is not None:
+                    self.runner.set_logger(self.session_logger)
+                ctx.runner = service
+            elif name == "repository":
+                self.repository = service
+                ctx.repository = service
+            elif name == "forge":
+                self.forge = service
+                ctx.forge = service
+
+    def step_parse_args(self, ctx: WorkflowContext) -> None:
         parsed = parse_args(
-            argv,
+            ctx.argv,
             default_thinking=self.config.agent.default_thinking,
             thinking_levels=self.config.agent.thinking_levels,
         )
-        self.start_session_logging(argv)
+        ctx.parsed = parsed
+        ctx.followup_thinking_level = parsed.thinking_level
+
+    def step_start_session_logging(self, ctx: WorkflowContext) -> None:
+        self.start_session_logging(ctx.argv)
+        ctx.session_logger = self.session_logger
+
+    def step_start_keep_awake(self, ctx: WorkflowContext) -> None:
         self.start_keep_awake()
+        ctx.keep_awake = self.keep_awake
+
+    def step_render_run_summary(self, ctx: WorkflowContext) -> None:
+        parsed = ctx.require_parsed()
         self.log_parsed_args(parsed)
         print_run_summary(
             parsed,
@@ -99,69 +297,97 @@ class PIDFlow:
             forge_label=self.config.forge.label,
             output_mode=self.output_mode,
         )
-        followup_thinking_level = parsed.thinking_level
-
         print_phase("Prepare", "validate repo, branch, tools")
-        validate_branch_name(self.runner, parsed.branch)
 
-        repo_root = self.resolve_repo_root()
+    def step_validate_branch(self, ctx: WorkflowContext) -> None:
+        validate_branch_name(self.runner, ctx.require_parsed().branch)
 
+    def step_resolve_repo_root(self, ctx: WorkflowContext) -> None:
+        ctx.repo_root = self.resolve_repo_root()
+
+    def step_require_commands(self, ctx: WorkflowContext) -> None:
+        _ = ctx
         self.require_external_commands()
 
-        main_worktree = self.resolve_main_worktree()
+    def step_resolve_main_worktree(self, ctx: WorkflowContext) -> None:
+        ctx.main_worktree = self.resolve_main_worktree()
 
+    def step_validate_clean_main_worktree(self, ctx: WorkflowContext) -> None:
         main_dirty = self.repository.output(
-            ["status", "--porcelain", "--untracked-files=all"], cwd=main_worktree
+            ["status", "--porcelain", "--untracked-files=all"],
+            cwd=ctx.main_worktree,
         )
         if has_output(main_dirty):
             echo_err(
-                f"pid: main worktree has uncommitted or untracked changes: {main_worktree}"
+                "pid: main worktree has uncommitted or untracked changes: "
+                f"{ctx.main_worktree}"
             )
             abort(1)
 
-        default_branch = self.repository.default_branch(
-            main_worktree, fallback=self.forge.default_branch
+    def step_resolve_default_branch(self, ctx: WorkflowContext) -> None:
+        ctx.default_branch = self.repository.default_branch(
+            ctx.main_worktree, fallback=self.forge.default_branch
         )
-        self.repository.switch_and_update_default_branch(main_worktree, default_branch)
-        base_rev = self.repository.output(
-            ["rev-parse", "HEAD"], cwd=main_worktree
+
+    def step_update_default_branch(self, ctx: WorkflowContext) -> None:
+        self.repository.switch_and_update_default_branch(
+            ctx.main_worktree, ctx.default_branch
+        )
+
+    def step_capture_base_rev(self, ctx: WorkflowContext) -> None:
+        ctx.base_rev = self.repository.output(
+            ["rev-parse", "HEAD"], cwd=ctx.main_worktree
         ).strip()
 
-        worktree_path = worktree_path_for(repo_root, parsed.branch)
-        self.repository.guard_new_worktree(main_worktree, parsed.branch, worktree_path)
-        self.repository.create_worktree(
-            main_worktree, worktree_path, parsed.branch, base_rev
+    def step_create_worktree(self, ctx: WorkflowContext) -> None:
+        parsed = ctx.require_parsed()
+        ctx.worktree_path = worktree_path_for(ctx.repo_root, parsed.branch)
+        self.repository.guard_new_worktree(
+            ctx.main_worktree, parsed.branch, ctx.worktree_path
         )
+        self.repository.create_worktree(
+            ctx.main_worktree, ctx.worktree_path, parsed.branch, ctx.base_rev
+        )
+        echo_out(f"Created {ctx.worktree_path} on branch {parsed.branch}")
 
-        echo_out(f"Created {worktree_path} on branch {parsed.branch}")
-
+    def step_trust_mise(self, ctx: WorkflowContext) -> None:
         if self.config.workflow.trust_mise and shutil.which("mise") is not None:
-            self.runner.require(["mise", "trust", "."], cwd=worktree_path)
+            self.runner.require(["mise", "trust", "."], cwd=ctx.worktree_path)
 
+    def step_run_initial_agent(self, ctx: WorkflowContext) -> None:
+        parsed = ctx.require_parsed()
         print_phase("Agent", "create initial changes")
         if parsed.interactive:
             self.run_agent_session(
                 parsed.interactive_prompt,
-                cwd=worktree_path,
+                cwd=ctx.worktree_path,
                 thinking_level=parsed.thinking_level,
             )
-        else:
-            self.run_agent_prompt(
-                parsed.prompt,
-                cwd=worktree_path,
-                thinking_level=parsed.thinking_level,
-                failure_context="stopping before review/commit/PR",
-                step_label=f"{self.config.agent.label} initial",
-            )
-
-        initial_commit_count = self.repository.count_commits(base_rev, worktree_path)
-        initial_dirty = self.repository.output(
-            ["status", "--porcelain", "--untracked-files=all"], cwd=worktree_path
+            return
+        self.run_agent_prompt(
+            parsed.prompt,
+            cwd=ctx.worktree_path,
+            thinking_level=parsed.thinking_level,
+            failure_context="stopping before review/commit/PR",
+            step_label=f"{self.config.agent.label} initial",
         )
-        pre_review_state_hash = self.repository.state_hash(worktree_path)
 
+    def step_inspect_initial_changes(self, ctx: WorkflowContext) -> None:
+        ctx.initial_commit_count = self.repository.count_commits(
+            ctx.base_rev, ctx.worktree_path
+        )
+        ctx.initial_dirty = self.repository.output(
+            ["status", "--porcelain", "--untracked-files=all"],
+            cwd=ctx.worktree_path,
+        )
+        ctx.pre_review_state_hash = self.repository.state_hash(ctx.worktree_path)
+
+    def step_run_review_agent(self, ctx: WorkflowContext) -> None:
+        parsed = ctx.require_parsed()
         review_target = review_target_for(
-            base_rev, initial_commit_count, has_output(initial_dirty)
+            ctx.base_rev,
+            ctx.initial_commit_count,
+            has_output(ctx.initial_dirty),
         )
         print_phase("Review", review_target.replace("_", " "))
         review_prompt = build_review_prompt(
@@ -171,61 +397,83 @@ class PIDFlow:
         )
         self.run_agent_prompt(
             review_prompt,
-            cwd=worktree_path,
+            cwd=ctx.worktree_path,
             thinking_level=self.config.agent.review_thinking,
             failure_context="stopping before commit/PR",
             label=f"{self.config.agent.label} review",
             step_label=f"{self.config.agent.label} review",
         )
 
-        post_review_state_hash = self.repository.state_hash(worktree_path)
-        if pre_review_state_hash != post_review_state_hash:
+    def step_inspect_review_changes(self, ctx: WorkflowContext) -> None:
+        post_review_state_hash = self.repository.state_hash(ctx.worktree_path)
+        if ctx.pre_review_state_hash != post_review_state_hash:
             self.review_rejected_first_pass = True
+            ctx.review_rejected_first_pass = True
             echo_out(
                 "pid: review changed first pass; follow-up "
-                f"{self.config.agent.label} will keep thinking {followup_thinking_level}"
+                f"{self.config.agent.label} will keep thinking "
+                f"{ctx.followup_thinking_level}"
             )
 
-        post_review_commit_count = self.repository.count_commits(
-            base_rev, worktree_path
+        ctx.post_review_commit_count = self.repository.count_commits(
+            ctx.base_rev, ctx.worktree_path
         )
-        post_review_dirty = self.repository.output(
-            ["status", "--porcelain", "--untracked-files=all"], cwd=worktree_path
+        ctx.post_review_dirty = self.repository.output(
+            ["status", "--porcelain", "--untracked-files=all"],
+            cwd=ctx.worktree_path,
         )
-        if post_review_commit_count == 0 and not has_output(post_review_dirty):
+
+    def step_stop_if_no_changes(self, ctx: WorkflowContext) -> None:
+        if ctx.post_review_commit_count == 0 and not has_output(ctx.post_review_dirty):
             echo_out("pid: no changes or commits after agent; stopping before PR")
             abort(0)
 
+    def step_generate_message(self, ctx: WorkflowContext) -> None:
         print_phase("Message + commit", "generate metadata and create commit")
         commit_message = self.generate_commit_message(
-            parsed=parsed,
-            base_rev=base_rev,
-            worktree_path=worktree_path,
+            parsed=ctx.require_parsed(),
+            base_rev=ctx.base_rev,
+            worktree_path=ctx.worktree_path,
         )
-        self.verify_commit_title(commit_message)
+        ctx.set_commit_message(commit_message)
 
+    def step_verify_commit_title(self, ctx: WorkflowContext) -> None:
+        if ctx.commit_message is None:
+            raise RuntimeError("commit message has not been generated")
+        self.verify_commit_title(ctx.commit_message)
+
+    def step_commit_changes(self, ctx: WorkflowContext) -> None:
+        if ctx.commit_message is None:
+            raise RuntimeError("commit message has not been generated")
         pre_commit_head = self.repository.output(
-            ["rev-parse", "HEAD"], cwd=worktree_path
+            ["rev-parse", "HEAD"], cwd=ctx.worktree_path
         ).strip()
-        self.repository.commit_initial_changes(base_rev, worktree_path, commit_message)
+        self.repository.commit_initial_changes(
+            ctx.base_rev, ctx.worktree_path, ctx.commit_message
+        )
         post_commit_head = self.repository.output(
-            ["rev-parse", "HEAD"], cwd=worktree_path
+            ["rev-parse", "HEAD"], cwd=ctx.worktree_path
         ).strip()
-        rewritten_head = pre_commit_head if pre_commit_head != post_commit_head else ""
-        commit_title = self.repository.output(
-            ["log", "-1", "--format=%s"], cwd=worktree_path
+        ctx.rewritten_head = (
+            pre_commit_head if pre_commit_head != post_commit_head else ""
+        )
+        ctx.commit_title = self.repository.output(
+            ["log", "-1", "--format=%s"], cwd=ctx.worktree_path
         ).strip()
 
+    def step_run_pr_loop(self, ctx: WorkflowContext) -> None:
+        if ctx.commit_message is None:
+            raise RuntimeError("commit message has not been generated")
         self.run_pr_loop(
-            parsed=parsed,
-            base_rev=base_rev,
-            commit_message=commit_message,
-            commit_title=commit_title,
-            rewritten_head=rewritten_head,
-            followup_thinking_level=followup_thinking_level,
-            main_worktree=main_worktree,
-            default_branch=default_branch,
-            worktree_path=worktree_path,
+            parsed=ctx.require_parsed(),
+            base_rev=ctx.base_rev,
+            commit_message=ctx.commit_message,
+            commit_title=ctx.commit_title,
+            rewritten_head=ctx.rewritten_head,
+            followup_thinking_level=ctx.followup_thinking_level,
+            main_worktree=ctx.main_worktree,
+            default_branch=ctx.default_branch,
+            worktree_path=ctx.worktree_path,
         )
 
     def start_session_logging(self, argv: list[str]) -> None:
@@ -1081,7 +1329,14 @@ def run_pid(
     *,
     config: PIDConfig | None = None,
     output_mode: OutputMode = OutputMode.NORMAL,
+    registry: ExtensionRegistry | None = None,
+    events: EventSink | None = None,
 ) -> int:
     """Run the pid flow and return a process exit code."""
 
-    return PIDFlow(config=config, output_mode=output_mode).run(argv)
+    return PIDFlow(
+        config=config,
+        output_mode=output_mode,
+        registry=registry,
+        events=events,
+    ).run(argv)

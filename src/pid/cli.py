@@ -9,9 +9,16 @@ from typing import Annotated
 import typer
 
 from pid import __version__
+from pid.commands import CommandRunner
 from pid.config import PIDConfig, init_config, load_config
 from pid.diagnostics import active_sessions_table, config_to_toml, print_config_metadata
 from pid.errors import PIDAbort
+from pid.extensions import (
+    ExtensionCommandContext,
+    ExtensionError,
+    ExtensionRegistry,
+    load_enabled_extensions,
+)
 from pid.interactive import resolve_interactive_args
 from pid.models import OutputMode
 from pid.output import echo_err, echo_out
@@ -26,6 +33,7 @@ APP_CONTEXT = {
 CONFIG_USAGE = "usage: pid config show|default|path"
 SESSIONS_USAGE = "usage: pid sessions [--all|-a]"
 VERSION_USAGE = "usage: pid version"
+X_USAGE = "usage: pid x <extension-command> [ARGS...]"
 
 app = typer.Typer(add_completion=False, context_settings=APP_CONTEXT)
 
@@ -90,6 +98,7 @@ def main(
 
     - pid sessions [--all|-a]
     - pid config show|default|path
+    - pid x <extension-command> [ARGS...]
     - pid version
     """
     raw_args = [*(args or []), *ctx.args]
@@ -160,6 +169,9 @@ def _run_info_command(raw_args: list[str], *, config_path: Path | None) -> int |
         echo_err(CONFIG_USAGE)
         return 2
 
+    if raw_args[0] == "x":
+        return _run_extension_command(raw_args[1:], config_path=config_path)
+
     if raw_args in (["sessions"], ["sessions", "list"]):
         typer.echo(active_sessions_table(), nl=False)
         return 0
@@ -181,4 +193,79 @@ def _run_info_command(raw_args: list[str], *, config_path: Path | None) -> int |
         echo_err(VERSION_USAGE)
         return 2
 
+    return None
+
+
+def _run_extension_command(raw_args: list[str], *, config_path: Path | None) -> int:
+    if not raw_args:
+        echo_err(X_USAGE)
+        return 2
+
+    try:
+        loaded_config = load_config(config_path)
+    except PIDAbort as error:
+        return error.code
+
+    registry = ExtensionRegistry()
+    repo_root = _optional_repo_root()
+    try:
+        load_enabled_extensions(
+            loaded_config.extensions,
+            registry,
+            repo_root=repo_root,
+            include_entry_points=True,
+            include_local=True,
+            fail_missing=True,
+        )
+    except ExtensionError as error:
+        echo_err(f"pid: {error}")
+        return 2
+
+    if raw_args in (["extensions", "list"], ["extensions"]):
+        typer.echo(_extensions_table(registry), nl=False)
+        return 0
+
+    command_name = raw_args[0]
+    callback = registry.cli_commands.get(command_name)
+    if callback is None:
+        echo_err(f"pid: unknown extension command: {command_name}")
+        echo_err(X_USAGE)
+        return 2
+
+    context = ExtensionCommandContext(
+        argv=raw_args[1:],
+        config=loaded_config,
+        registry=registry,
+        repo_root=repo_root,
+    )
+    try:
+        return callback(context) or 0
+    except PIDAbort as error:
+        return error.code
+    except ExtensionError as error:
+        echo_err(f"pid: {error}")
+        return 2
+    except Exception as error:  # noqa: BLE001 - extension command boundary
+        echo_err(
+            f"pid: extension command {command_name} failed: "
+            f"{type(error).__name__}: {error}"
+        )
+        return 1
+
+
+def _extensions_table(registry: ExtensionRegistry) -> str:
+    if not registry.extension_infos:
+        return "no enabled pid extensions\n"
+    lines = ["name  api  source"]
+    lines.append("----  ---  ------")
+    for info in registry.extension_infos:
+        lines.append(f"{info.name}  {info.api_version}    {info.source}")
+    return "\n".join(lines) + "\n"
+
+
+def _optional_repo_root() -> Path | None:
+    result = CommandRunner().run(["git", "rev-parse", "--show-toplevel"])
+    output = result.stdout.strip()
+    if result.returncode == 0 and output:
+        return Path(output)
     return None

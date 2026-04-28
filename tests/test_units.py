@@ -3,6 +3,8 @@ from __future__ import annotations
 import importlib
 import importlib.metadata
 import io
+import os
+import re
 import runpy
 import sys
 from pathlib import Path
@@ -269,6 +271,70 @@ def test_output_helpers_preserve_newline_behavior(
 class TTYStream:
     def isatty(self) -> bool:
         return True
+
+
+ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+
+
+def test_interactive_display_renders_rich_panel_with_values() -> None:
+    display = interactive_module._InteractiveDisplay()
+    rendered = display._render(
+        {
+            "attempts": "3",
+            "thinking": "medium",
+            "branch": "feature/x",
+            "prompt": "build thing",
+        },
+        error=None,
+    )
+
+    assert "╭" in rendered
+    assert "pid prompt" in rendered
+    assert "enter to accept defaults" in rendered
+    assert "attempts" in rendered
+    assert "feature/x" in rendered
+
+
+def test_interactive_display_renders_validation_error() -> None:
+    display = interactive_module._InteractiveDisplay()
+    rendered = display._render(
+        {
+            "attempts": "3",
+            "thinking": "medium",
+            "branch": "(unset)",
+            "prompt": "(unset)",
+        },
+        error="Enter a positive integer, e.g. 3.",
+    )
+
+    assert "✗ Enter a positive integer, e.g. 3." in rendered
+
+
+def test_interactive_display_tty_width_matches_terminal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "pid.interactive.click.get_text_stream", lambda _name: TTYStream()
+    )
+    monkeypatch.setattr(
+        "pid.interactive.shutil.get_terminal_size",
+        lambda _fallback: os.terminal_size((40, 24)),
+    )
+    display = interactive_module._InteractiveDisplay()
+
+    rendered = display._render(
+        {
+            "attempts": "3",
+            "thinking": "medium",
+            "branch": "feature/long-name-that-wraps",
+            "prompt": "build a nicer interactive prompt UI",
+        },
+        error=None,
+    )
+    plain = ANSI_ESCAPE_RE.sub("", rendered)
+
+    assert display._console.width == 40
+    assert max(len(line) for line in plain.splitlines()) <= 40
 
 
 def test_interactive_display_clears_previous_tty_render(

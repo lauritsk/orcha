@@ -14,7 +14,7 @@ from plumbum.commands.processes import CommandNotFound
 from pid.errors import abort
 from pid.models import CommandResult, OutputMode
 from pid.output import echo_err, write_command_output
-from pid.session_logging import SessionLogger
+from pid.session_logging import CommandLogHandle, SessionLogger
 
 
 class CommandRunner:
@@ -50,13 +50,11 @@ class CommandRunner:
         cwd: str | Path | None = None,
         combine_output: bool = False,
     ) -> CommandResult:
-        command_log = None
-        if self.logger is not None:
-            command_log = self.logger.command_start(
-                args,
-                cwd=cwd,
-                combine_output=combine_output,
-            )
+        command_log = self._start_command_log(
+            args,
+            cwd=cwd,
+            combine_output=combine_output,
+        )
 
         try:
             local.env.update(os.environ)
@@ -79,12 +77,10 @@ class CommandRunner:
         except CommandNotFound, FileNotFoundError:
             result = CommandResult(127, "", f"pid: command not found: {args[0]}\n")
         except Exception as error:
-            if command_log is not None and self.logger is not None:
-                self.logger.command_exception(command_log, error)
+            self._log_command_exception(command_log, error)
             raise
 
-        if command_log is not None and self.logger is not None:
-            self.logger.command_result(command_log, result)
+        self._finish_command_log(command_log, result)
         if self.writes_success_output() and result.returncode == 0:
             write_command_output(result)
         return result
@@ -97,13 +93,11 @@ class CommandRunner:
     ) -> CommandResult:
         """Run a command attached to the current terminal."""
 
-        command_log = None
-        if self.logger is not None:
-            command_log = self.logger.command_start(
-                args,
-                cwd=cwd,
-                combine_output=False,
-            )
+        command_log = self._start_command_log(
+            args,
+            cwd=cwd,
+            combine_output=False,
+        )
 
         try:
             completed = subprocess.run(args, cwd=cwd, check=False)
@@ -111,13 +105,34 @@ class CommandRunner:
         except FileNotFoundError:
             result = CommandResult(127, "", f"pid: command not found: {args[0]}\n")
         except Exception as error:
-            if command_log is not None and self.logger is not None:
-                self.logger.command_exception(command_log, error)
+            self._log_command_exception(command_log, error)
             raise
 
+        self._finish_command_log(command_log, result)
+        return result
+
+    def _start_command_log(
+        self,
+        args: list[str],
+        *,
+        cwd: str | Path | None,
+        combine_output: bool,
+    ) -> CommandLogHandle | None:
+        if self.logger is None:
+            return None
+        return self.logger.command_start(args, cwd=cwd, combine_output=combine_output)
+
+    def _finish_command_log(
+        self, command_log: CommandLogHandle | None, result: CommandResult
+    ) -> None:
         if command_log is not None and self.logger is not None:
             self.logger.command_result(command_log, result)
-        return result
+
+    def _log_command_exception(
+        self, command_log: CommandLogHandle | None, error: BaseException
+    ) -> None:
+        if command_log is not None and self.logger is not None:
+            self.logger.command_exception(command_log, error)
 
     def require(
         self,

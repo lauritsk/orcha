@@ -123,14 +123,7 @@ class PIDFlow:
                 )
             raise
         finally:
-            if self.keep_awake is not None:
-                self.keep_awake.stop()
-                self.keep_awake = None
-            if self.session_logger is not None:
-                self.session_logger.event(f"exit code: {exit_code}")
-                self.session_logger.close()
-                set_session_logger(None)
-                self.runner.set_logger(None)
+            self._finish_run(exit_code)
         return exit_code
 
     def run_supervised(self, argv: list[str]) -> WorkflowContext:
@@ -163,14 +156,17 @@ class PIDFlow:
             exit_code = 1
             raise
         finally:
-            if self.keep_awake is not None:
-                self.keep_awake.stop()
-                self.keep_awake = None
-            if self.session_logger is not None:
-                self.session_logger.event(f"exit code: {exit_code}")
-                self.session_logger.close()
-                set_session_logger(None)
-                self.runner.set_logger(None)
+            self._finish_run(exit_code)
+
+    def _finish_run(self, exit_code: int) -> None:
+        if self.keep_awake is not None:
+            self.keep_awake.stop()
+            self.keep_awake = None
+        if self.session_logger is not None:
+            self.session_logger.event(f"exit code: {exit_code}")
+            self.session_logger.close()
+            set_session_logger(None)
+            self.runner.set_logger(None)
 
     def _run(self, argv: list[str]) -> None:
         ctx = WorkflowContext(

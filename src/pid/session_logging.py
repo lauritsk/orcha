@@ -45,9 +45,10 @@ def session_log_dir(
     if override := env.get(LOG_DIR_ENV):
         return Path(override).expanduser()
 
-    if xdg_state_home := env.get("XDG_STATE_HOME"):
-        if xdg_path := _absolute_env_path(xdg_state_home):
-            return xdg_path / "pid" / "logs"
+    if (xdg_state_home := env.get("XDG_STATE_HOME")) and (
+        xdg_path := _absolute_env_path(xdg_state_home)
+    ):
+        return xdg_path / "pid" / "logs"
 
     base_home = Path.home() if home is None else home
     system = platform.system() if platform_name is None else platform_name

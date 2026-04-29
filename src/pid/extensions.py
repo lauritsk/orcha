@@ -213,53 +213,96 @@ class ExtensionRegistry:
 
         steps = list(default_steps)
         self._validate_unique_steps(steps)
-        default_names = {step.name for step in steps}
+
         external_step_names = set(external_steps)
-        known_step_names = set(known_steps) | external_step_names
-        missing_replacements = (
-            set(self.replaced_steps) - default_names - known_step_names
+        self._validate_replacements(
+            default_names={step.name for step in steps},
+            known_names=set(known_steps) | external_step_names,
         )
+
+        resolved = self._active_default_steps(steps)
+        for insertion in sorted(
+            self.added_steps, key=lambda item: item.registration_index
+        ):
+            self._apply_step_insertion(
+                resolved,
+                insertion,
+                external_step_names=external_step_names,
+                include_unanchored=include_unanchored,
+            )
+
+        self._validate_unique_steps(resolved)
+        return resolved
+
+    def _validate_replacements(
+        self, *, default_names: set[str], known_names: set[str]
+    ) -> None:
+        missing_replacements = set(self.replaced_steps) - default_names - known_names
         if missing_replacements:
             missing = sorted(missing_replacements)[0]
             raise ExtensionError(f"cannot replace unknown step: {missing}")
 
-        resolved: list[WorkflowStep] = []
-        for step in steps:
-            if step.name in self.disabled_steps:
-                continue
-            resolved.append(self.replaced_steps.get(step.name, step))
+    def _active_default_steps(self, steps: list[WorkflowStep]) -> list[WorkflowStep]:
+        return [
+            self.replaced_steps.get(step.name, step)
+            for step in steps
+            if step.name not in self.disabled_steps
+        ]
 
-        for insertion in sorted(
-            self.added_steps, key=lambda item: item.registration_index
-        ):
-            if insertion.step.name in self.disabled_steps:
-                continue
-            names = [step.name for step in resolved]
-            if insertion.step.name in names:
-                raise ExtensionError(f"step already registered: {insertion.step.name}")
-            if insertion.before is not None:
-                if insertion.before in external_step_names:
-                    continue
-                if insertion.before not in names:
-                    raise ExtensionError(
-                        f"cannot add step before unknown step: {insertion.before}"
-                    )
-                resolved.insert(names.index(insertion.before), insertion.step)
-                continue
-            if insertion.after is not None:
-                if insertion.after in external_step_names:
-                    continue
-                if insertion.after not in names:
-                    raise ExtensionError(
-                        f"cannot add step after unknown step: {insertion.after}"
-                    )
-                resolved.insert(names.index(insertion.after) + 1, insertion.step)
-                continue
-            if include_unanchored:
-                resolved.append(insertion.step)
+    def _apply_step_insertion(
+        self,
+        resolved: list[WorkflowStep],
+        insertion: _StepInsertion,
+        *,
+        external_step_names: set[str],
+        include_unanchored: bool,
+    ) -> None:
+        if insertion.step.name in self.disabled_steps:
+            return
 
-        self._validate_unique_steps(resolved)
-        return resolved
+        names = [step.name for step in resolved]
+        if insertion.step.name in names:
+            raise ExtensionError(f"step already registered: {insertion.step.name}")
+        if insertion.before is not None:
+            self._insert_step(
+                resolved,
+                insertion.step,
+                anchor=insertion.before,
+                names=names,
+                external_step_names=external_step_names,
+                after=False,
+            )
+            return
+        if insertion.after is not None:
+            self._insert_step(
+                resolved,
+                insertion.step,
+                anchor=insertion.after,
+                names=names,
+                external_step_names=external_step_names,
+                after=True,
+            )
+            return
+        if include_unanchored:
+            resolved.append(insertion.step)
+
+    @staticmethod
+    def _insert_step(
+        resolved: list[WorkflowStep],
+        step: WorkflowStep,
+        *,
+        anchor: str,
+        names: list[str],
+        external_step_names: set[str],
+        after: bool,
+    ) -> None:
+        if anchor in external_step_names:
+            return
+        direction = "after" if after else "before"
+        if anchor not in names:
+            raise ExtensionError(f"cannot add step {direction} unknown step: {anchor}")
+        offset = 1 if after else 0
+        resolved.insert(names.index(anchor) + offset, step)
 
     def run_hooks(self, name: str, ctx: Any) -> StepResult:
         """Run registered hooks and return the first non-continue result."""

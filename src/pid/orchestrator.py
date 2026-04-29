@@ -148,34 +148,11 @@ class OrchestratorAgent:
         except WorkflowFailure as failure:
             self.store.update_from_context(run_id, flow.context)
             action = self.policy.decide(failure)
-            if action.kind == RecoveryActionKind.MARK_DONE:
-                state = self.store.mark_failed(
-                    run_id,
-                    failure,
-                    pending_recovery_action=action.to_dict(),
-                    status="no_changes",
-                )
-                return AgentRunResult(run_id, state, failure.code)
-            if failure.kind == FailureKind.FOLLOWUP_PAUSED:
-                state = self.store.mark_failed(
-                    run_id,
-                    failure,
-                    pending_recovery_action=action.to_dict(),
-                    status="paused",
-                )
-                return AgentRunResult(run_id, state, failure.code)
-            if failure.kind == FailureKind.FOLLOWUP_ABORTED:
-                state = self.store.mark_failed(
-                    run_id,
-                    failure,
-                    pending_recovery_action=action.to_dict(),
-                    status="aborted",
-                )
-                return AgentRunResult(run_id, state, failure.code)
             state = self.store.mark_failed(
                 run_id,
                 failure,
                 pending_recovery_action=action.to_dict(),
+                status=agent_failure_status(failure, action.kind),
             )
             return AgentRunResult(run_id, state, failure.code)
         state = self.store.mark_succeeded(run_id, ctx)
@@ -238,27 +215,12 @@ class OrchestratorSupervisor:
             branch_prefix=branch_prefix,
             config=self.config,
         )
-        for child in children:
-            self.store.create_run(
-                branch=str(child["branch"]),
-                prompt=str(child["prompt"]),
-                argv=workflow_argv(
-                    AgentStartOptions(
-                        branch=str(child["branch"]),
-                        prompt=str(child["prompt"]),
-                        thinking=str(child["thinking"]),
-                        run_id=str(child["child_run_id"]),
-                        parent_run_id=run_id,
-                        plan_item_id=str(child["item_id"]),
-                    ),
-                    default_thinking=self.config.agent.default_thinking,
-                ),
-                run_id=str(child["child_run_id"]),
-                parent_run_id=run_id,
-                plan_item_id=str(child["item_id"]),
-                status="planned",
-                extra={"thinking": child["thinking"]},
-            )
+        create_planned_child_runs(
+            self.store,
+            children,
+            parent_run_id=run_id,
+            default_thinking=self.config.agent.default_thinking,
+        )
 
         state["children"] = children
         state["status"] = "planned" if options.dry_run else "running"
@@ -332,6 +294,55 @@ class OrchestratorSupervisor:
         )
         self.store.write_state(options.run_id, state)
         return {"record": record, "routed_to": delivered}
+
+
+def agent_failure_status(
+    failure: WorkflowFailure, action_kind: RecoveryActionKind
+) -> str:
+    """Return persisted run status for a supervised workflow failure."""
+
+    if action_kind == RecoveryActionKind.MARK_DONE:
+        return "no_changes"
+    if failure.kind == FailureKind.FOLLOWUP_PAUSED:
+        return "paused"
+    if failure.kind == FailureKind.FOLLOWUP_ABORTED:
+        return "aborted"
+    return "failed"
+
+
+def create_planned_child_runs(
+    store: RunStore,
+    children: list[dict[str, Any]],
+    *,
+    parent_run_id: str,
+    default_thinking: str,
+) -> None:
+    """Persist planned child runs before they are launched."""
+
+    for child in children:
+        branch = str(child["branch"])
+        prompt = str(child["prompt"])
+        thinking = str(child["thinking"])
+        child_run_id = str(child["child_run_id"])
+        item_id = str(child["item_id"])
+        options = AgentStartOptions(
+            branch=branch,
+            prompt=prompt,
+            thinking=thinking,
+            run_id=child_run_id,
+            parent_run_id=parent_run_id,
+            plan_item_id=item_id,
+        )
+        store.create_run(
+            branch=branch,
+            prompt=prompt,
+            argv=workflow_argv(options, default_thinking=default_thinking),
+            run_id=child_run_id,
+            parent_run_id=parent_run_id,
+            plan_item_id=item_id,
+            status="planned",
+            extra={"thinking": thinking},
+        )
 
 
 def workflow_argv(options: AgentStartOptions, *, default_thinking: str) -> list[str]:

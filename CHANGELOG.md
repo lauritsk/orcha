@@ -2,6 +2,17 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## [v0.11.0](https://github.com/lauritsk/pid/compare/829eef5c31377ef3324be2a8397fc7b62db9939e..v0.11.0) - 2026-04-29
+#### Features
+- (**cli**) polish startup flows - ([8e3c01a](https://github.com/lauritsk/pid/commit/8e3c01a277f2ba7a5efdfa802fc98dc36b0813eb)) - Karl Hans Laurits
+#### Refactoring
+- (**cleanup**) remove dead orchestration paths - ([81f5755](https://github.com/lauritsk/pid/commit/81f5755868b27eadff7e31c0deb2d4050842336b)) - Karl Hans Laurits
+- (**cli**) maximize Typer parsing - ([5408563](https://github.com/lauritsk/pid/commit/54085631e35a63b0a902a1eede91a3ff8a6cf671)) - Karl Hans Laurits
+#### Miscellaneous Chores
+- update local pid tool - ([829eef5](https://github.com/lauritsk/pid/commit/829eef5c31377ef3324be2a8397fc7b62db9939e)) - Karl Hans Laurits
+
+- - -
+
 ## [v0.10.1](https://github.com/lauritsk/pid/compare/8a131ab553c23675e5ba37d6283e2c85593aae5b..v0.10.1) - 2026-04-29
 #### Bug Fixes
 - (**release**) restore buildx registry auth - ([8a131ab](https://github.com/lauritsk/pid/commit/8a131ab553c23675e5ba37d6283e2c85593aae5b)) - Karl Hans Laurits

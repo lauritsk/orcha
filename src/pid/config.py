@@ -812,12 +812,11 @@ def parse_forge_config(data: Any, path: Path) -> ForgeConfig:
             "forge.pr_merge_args uses {head_oid}",
         )
 
-    for value in checks_pending_exit_codes:
-        if value < 0:
-            fail_config(
-                path,
-                "forge.checks_pending_exit_codes must not contain negative integers",
-            )
+    if any(value < 0 for value in checks_pending_exit_codes):
+        fail_config(
+            path,
+            "forge.checks_pending_exit_codes must not contain negative integers",
+        )
     if any(not marker.strip() for marker in no_checks_markers):
         fail_config(path, "forge.no_checks_markers must not contain blank strings")
 
@@ -980,22 +979,16 @@ def parse_workflow_config(data: Any, path: Path) -> WorkflowConfig:
         "workflow.base_refresh_agent_conflict_fix",
     )
 
-    if checks_timeout_seconds < 0:
-        fail_config(path, "workflow.checks_timeout_seconds must be non-negative")
-    if checks_poll_interval_seconds < 0:
-        fail_config(path, "workflow.checks_poll_interval_seconds must be non-negative")
-    if merge_confirmation_timeout_seconds < 0:
-        fail_config(
-            path,
-            "workflow.merge_confirmation_timeout_seconds must be non-negative",
-        )
-    if merge_confirmation_poll_interval_seconds < 0:
-        fail_config(
-            path,
-            "workflow.merge_confirmation_poll_interval_seconds must be non-negative",
-        )
-    if merge_retry_limit < 0:
-        fail_config(path, "workflow.merge_retry_limit must be non-negative")
+    workflow_limits = {
+        "workflow.checks_timeout_seconds": checks_timeout_seconds,
+        "workflow.checks_poll_interval_seconds": checks_poll_interval_seconds,
+        "workflow.merge_confirmation_timeout_seconds": merge_confirmation_timeout_seconds,
+        "workflow.merge_confirmation_poll_interval_seconds": merge_confirmation_poll_interval_seconds,
+        "workflow.merge_retry_limit": merge_retry_limit,
+    }
+    for key, value in workflow_limits.items():
+        if value < 0:
+            fail_config(path, f"{key} must be non-negative")
     if setup_command and not setup_command[0].strip():
         fail_config(path, "workflow.setup_command executable must not be empty")
     if base_refresh_limit < 0:

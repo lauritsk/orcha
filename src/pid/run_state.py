@@ -258,11 +258,7 @@ class RunStore:
         }
         paths = self.paths(run_id)
         _ensure_private_dir(paths.directory)
-        flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
-        file_descriptor = os.open(paths.events, flags, 0o600)
-        with os.fdopen(file_descriptor, "a", encoding="utf-8") as stream:
-            stream.write(json.dumps(wrapped, sort_keys=True, default=str) + "\n")
-        _chmod_if_supported(paths.events, 0o600)
+        _append_private_json_line(paths.events, wrapped)
         state["event_count"] = sequence
         project_event(state, event)
         self.write_state(run_id, state)
@@ -356,11 +352,7 @@ class RunStore:
     def _append_followup_record(self, run_id: str, record: dict[str, Any]) -> None:
         paths = self.paths(run_id)
         _ensure_private_dir(paths.directory)
-        flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
-        file_descriptor = os.open(paths.followups, flags, 0o600)
-        with os.fdopen(file_descriptor, "a", encoding="utf-8") as stream:
-            stream.write(json.dumps(record, sort_keys=True, default=str) + "\n")
-        _chmod_if_supported(paths.followups, 0o600)
+        _append_private_json_line(paths.followups, record)
 
     def _read_followup_records(self, run_id: str) -> list[dict[str, Any]]:
         path = self.paths(run_id).followups
@@ -452,6 +444,16 @@ def followup_sequence(followup_id: str) -> int:
     if match is None:
         raise ValueError(f"invalid follow-up id: {followup_id}")
     return int(match.group("sequence"))
+
+
+def _append_private_json_line(path: Path, value: dict[str, Any]) -> None:
+    """Append one private JSONL record."""
+
+    flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
+    file_descriptor = os.open(path, flags, 0o600)
+    with os.fdopen(file_descriptor, "a", encoding="utf-8") as stream:
+        stream.write(json.dumps(value, sort_keys=True, default=str) + "\n")
+    _chmod_if_supported(path, 0o600)
 
 
 def _ensure_private_dir(path: Path, *, exist_ok: bool = True) -> None:

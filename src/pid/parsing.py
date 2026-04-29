@@ -41,9 +41,7 @@ def parse_args(
     if re.fullmatch(r"[0-9]+", args[0]):
         attempts = args.pop(0)
         if re.fullmatch(r"[1-9][0-9]*", attempts) is None:
-            echo_err("pid: ATTEMPTS must be a positive integer")
-            echo_err(usage)
-            abort(2)
+            _fail_parse("pid: ATTEMPTS must be a positive integer", usage)
         max_attempts = int(attempts)
 
     thinking_level = default_thinking
@@ -51,21 +49,15 @@ def parse_args(
         thinking_level = args.pop(0)
 
     if not args:
-        echo_err("pid: branch required")
-        echo_err(usage)
-        abort(2)
+        _fail_parse("pid: branch required", usage)
 
     branch = args.pop(0)
     prompt = " ".join(args)
     if not branch:
-        echo_err("pid: branch must be non-empty")
-        echo_err(usage)
-        abort(2)
+        _fail_parse("pid: branch must be non-empty", usage)
     interactive_prompt = prompt if interactive and prompt else None
     if not prompt and not interactive:
-        echo_err("pid: prompt required for non-interactive agent flow")
-        echo_err(usage)
-        abort(2)
+        _fail_parse("pid: prompt required for non-interactive agent flow", usage)
     if not prompt:
         prompt = "Interactive agent session."
 
@@ -77,6 +69,12 @@ def parse_args(
         interactive,
         interactive_prompt,
     )
+
+
+def _fail_parse(message: str, usage: str) -> None:
+    echo_err(message)
+    echo_err(usage)
+    abort(2)
 
 
 def bump_thinking(

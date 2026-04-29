@@ -168,21 +168,23 @@ def resolve_interactive_args(argv: list[str], config: PIDConfig) -> list[str]:
             return original
 
     attempts = "3"
+    thinking = config.agent.default_thinking
     if args and re.fullmatch(r"[0-9]+", args[0]):
         if re.fullmatch(r"[1-9][0-9]*", args[0]) is None:
             return original
         attempts = args.pop(0)
         resolved.append(attempts)
     elif prompt_all_defaults:
-        attempts = _prompt_attempts(
-            attempts,
-            _values(attempts, config.agent.default_thinking, "", ""),
+        attempts = _prompt_positive_int(
+            "Attempts",
+            default=attempts,
+            example="3",
+            values=_values(attempts, thinking, "", ""),
             display=display,
         )
         resolved.append(attempts)
         prompted = True
 
-    thinking = config.agent.default_thinking
     if args and args[0] in config.agent.thinking_levels:
         thinking = args.pop(0)
         resolved.append(thinking)
@@ -254,9 +256,11 @@ def resolve_agent_start_args(argv: list[str], config: PIDConfig) -> list[str]:
     display = _InteractiveDisplay(title="pid agent start")
 
     if namespace.attempts is None and prompt_all_defaults:
-        attempts = _prompt_attempts(
-            attempts,
-            _values(attempts, thinking, branch, prompt),
+        attempts = _prompt_positive_int(
+            "Attempts",
+            default=attempts,
+            example="3",
+            values=_values(attempts, thinking, branch, prompt),
             display=display,
         )
         prompted = True
@@ -359,6 +363,7 @@ def resolve_orchestrator_start_args(argv: list[str], config: PIDConfig) -> list[
         concurrency = _prompt_positive_int(
             "Concurrency",
             default=concurrency,
+            example="4",
             values=_orchestrator_values(goal, plan_file, branch_prefix, concurrency),
             display=display,
         )
@@ -585,20 +590,6 @@ def _summary_value(value: str) -> Text:
     return Text(value)
 
 
-def _prompt_attempts(
-    default: str, values: dict[str, str], *, display: _InteractiveDisplay
-) -> str:
-    error: str | None = None
-    while True:
-        display.render(values, error=error)
-        message = "Attempts (positive integer)"
-        value = typer.prompt(message, default=default, show_default=True)
-        display.record_prompt_result(message, value, default=default, show_default=True)
-        if re.fullmatch(r"[1-9][0-9]*", value):
-            return value
-        error = "Enter a positive integer, e.g. 3."
-
-
 def _prompt_thinking(
     default: str,
     thinking_levels: tuple[str, ...],
@@ -653,6 +644,7 @@ def _prompt_positive_int(
     label: str,
     *,
     default: str,
+    example: str,
     values: dict[str, str],
     display: _InteractiveDisplay,
 ) -> str:
@@ -664,4 +656,4 @@ def _prompt_positive_int(
         display.record_prompt_result(message, value, default=default, show_default=True)
         if re.fullmatch(r"[1-9][0-9]*", value):
             return value
-        error = "Enter a positive integer, e.g. 4."
+        error = f"Enter a positive integer, e.g. {example}."

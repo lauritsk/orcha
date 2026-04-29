@@ -573,6 +573,11 @@ def _run_orchestrator_command(
             config=config, store=store, output_mode=output_mode
         )
         result = supervisor.start(options)
+        if _should_prompt_orchestrator_intake(options, result.state):
+            result.state["intake_answers"] = _prompt_orchestrator_intake_answers(
+                cast("list[object]", result.state["intake_questions"])
+            )
+            store.write_state(result.run_id, result.state)
     except (OSError, ValueError) as error:
         echo_err(f"pid: {error}")
         echo_err(
@@ -582,9 +587,14 @@ def _run_orchestrator_command(
         return 2
     echo_out(f"pid: orchestrator run {result.run_id}: {result.state['status']}")
     if result.state.get("intake_questions") and not result.state.get("approved_plan"):
-        echo_out("pid: answer these intake questions before child launch:")
-        for index, question in enumerate(result.state["intake_questions"], start=1):
-            echo_out(f"{index}. {question}")
+        if result.state.get("intake_answers"):
+            echo_out(
+                "pid: intake answers recorded; create a plan file to launch children"
+            )
+        else:
+            echo_out("pid: answer these intake questions before child launch:")
+            for index, question in enumerate(result.state["intake_questions"], start=1):
+                echo_out(f"{index}. {question}")
     children = result.state.get("children")
     if isinstance(children, list) and children:
         launched = sum(
@@ -594,6 +604,30 @@ def _run_orchestrator_command(
         )
         echo_out(f"pid: child runs planned={len(children)} launched={launched}")
     return result.exit_code
+
+
+def _should_prompt_orchestrator_intake(
+    options: OrchestratorStartOptions, state: dict[str, object]
+) -> bool:
+    return (
+        sys.stdin.isatty()
+        and options.plan_file is None
+        and not options.non_interactive
+        and bool(state.get("intake_questions"))
+        and not state.get("approved_plan")
+    )
+
+
+def _prompt_orchestrator_intake_answers(
+    questions: list[object],
+) -> list[dict[str, str]]:
+    echo_out("pid: answer orchestrator intake questions:")
+    answers: list[dict[str, str]] = []
+    for index, question_value in enumerate(questions, start=1):
+        question = str(question_value)
+        answer = str(typer.prompt(f"{index}. {question}")).strip()
+        answers.append({"question": question, "answer": answer})
+    return answers
 
 
 def _parse_orchestrator_start(
@@ -634,8 +668,19 @@ def _orchestrator_status(state: dict[str, object], store: RunStore) -> str:
     ]
     questions = state.get("intake_questions")
     if isinstance(questions, list) and questions and not state.get("approved_plan"):
-        lines.append("intake_questions:")
-        lines.extend(f"- {question}" for question in questions)
+        answers = state.get("intake_answers")
+        if isinstance(answers, list) and answers:
+            lines.append("intake_answers:")
+            for answer in answers:
+                if not isinstance(answer, dict):
+                    continue
+                answer_data = cast("dict[str, object]", answer)
+                question = answer_data.get("question", "")
+                response = answer_data.get("answer", "")
+                lines.append(f"- {question}: {response}")
+        else:
+            lines.append("intake_questions:")
+            lines.extend(f"- {question}" for question in questions)
     children = state.get("children")
     if isinstance(children, list) and children:
         lines.append("children:")

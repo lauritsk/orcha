@@ -87,10 +87,10 @@ pid agent status <run-id>
 ```
 
 Recommended larger-change flow: start an orchestrator. In a terminal,
-`pid orchestrator` prompts for the goal and launch defaults. Without a plan file
-it prints intake questions to answer before child launch; with an approved JSON
-plan it creates child run records and launches dependency-free children in
-parallel unless `--dry-run` is set:
+`pid orchestrator` prompts for the goal, launch defaults, and intake answers.
+Without a plan file it records those answers before child launch; with an
+approved JSON plan it creates child run records and launches dependency-free
+children in parallel unless `--dry-run` is set:
 
 ```sh
 pid orchestrator
@@ -168,7 +168,7 @@ pid --version
 | `pid agent follow-up RUN_ID` | Queue a durable follow-up for a supervised run. Valid types are `clarify`, `scope_change`, `pause`, and `abort`. Running children apply it at the next safe checkpoint. |
 | `pid agent status RUN_ID` | Show current step, status, PR URL, failure, and follow-up counts for a run. |
 | `pid agent runs` | List recent supervised runs. |
-| `pid orchestrator`, `pid orchestrator start` | Create a larger-run coordinator. In a TTY, missing startup options are prompted. Without `--plan-file`, prints intake questions; with a plan, creates child runs and launches ready children. |
+| `pid orchestrator`, `pid orchestrator start` | Create a larger-run coordinator. In a TTY, missing startup options and no-plan intake answers are prompted. Without `--plan-file` in non-interactive mode, prints intake questions; with a plan, creates child runs and launches ready children. |
 | `pid orchestrator follow-up RUN_ID` | Record a global follow-up or route it to child run inboxes with `--target` or `--all`. Uses the same follow-up types as `pid agent follow-up`. |
 | `pid orchestrator status RUN_ID` | Show orchestrator status and child run IDs/statuses. |
 | `pid orchestrator runs` | List recent orchestrator runs. |

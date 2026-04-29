@@ -498,6 +498,37 @@ def test_orchestrator_start_without_plan_grills_user(
     assert "answer these intake questions" in capsys.readouterr().out
 
 
+def test_orchestrator_start_without_plan_prompts_for_intake_answers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    store = RunStore(tmp_path / "runs")
+    config = PIDConfig(orchestrator=OrchestratorConfig(store_dir=str(store.root)))
+    answers = iter(f"answer {index}" for index in range(1, 20))
+
+    monkeypatch.setattr(sys, "stdin", SimpleNamespace(isatty=lambda: True))
+    monkeypatch.setattr("pid.cli.typer.prompt", lambda *_, **__: next(answers))
+
+    code = _run_orchestrator_command(
+        ["start", "--goal", "Ship larger change"],
+        config=config,
+        output_mode=OutputMode.NORMAL,
+        config_path=None,
+    )
+
+    assert code == 0
+    state = store.list_runs()[0]
+    assert state["status"] == "awaiting_plan"
+    assert len(state["intake_answers"]) == len(state["intake_questions"])
+    assert state["intake_answers"][0] == {
+        "question": "What exact outcome should exist when this is done?",
+        "answer": "answer 1",
+    }
+    output = capsys.readouterr().out
+    assert "answer orchestrator intake questions" in output
+    assert "intake answers recorded" in output
+    assert "answer these intake questions" not in output
+
+
 def test_orchestrator_plan_dry_run_creates_child_runs_and_routes_follow_up(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

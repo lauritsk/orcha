@@ -17,7 +17,6 @@ tombi = "0.9.26"
 ty = "0.0.33"
 uv = "0.11.8"
 shfmt = "3.13.1"
-oras = "1.3.2"
 
 [hooks]
 postinstall = "hk install --mise"
@@ -57,15 +56,6 @@ depends = ["lint", "test", "build"]
 description = "Bump project version"
 run = "cog bump --auto"
 
-[tasks."release:login:ghcr"]
-description = "Log in to ghcr.io with ORAS"
-run = 'echo "$GITHUB_TOKEN" | oras login ghcr.io --username "$GITHUB_ACTOR" --password-stdin'
-
-[tasks."release:login:dhi"]
-description = "Log in to dhi.io with ORAS"
-run = 'echo "$DHI_PASSWORD" | oras login dhi.io --username "$DHI_USERNAME" --password-stdin'
-
 [tasks."release:publish"]
 description = "Publish release"
-depends = ["release:login:ghcr", "release:login:dhi"]
 run = "goreleaser release --clean"

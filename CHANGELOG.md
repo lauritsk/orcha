@@ -2,6 +2,27 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## [v0.9.0](https://github.com/lauritsk/pid/compare/5998b6edd39d20c94039db71a17c3e3d8642a0d7..v0.9.0) - 2026-04-29
+#### Features
+- expose PR loop extension points - ([442f96f](https://github.com/lauritsk/pid/commit/442f96f38bacaa3139969fb7dcdf699c96473cc5)) - Karl Hans Laurits
+- make pid workflows extensible - ([4bbfbc2](https://github.com/lauritsk/pid/commit/4bbfbc283cdf7b4dd1377996b84a2cde584ca827)) - Karl Hans Laurits
+#### Documentation
+- (**agents**) clarify issue creation - ([6f3228b](https://github.com/lauritsk/pid/commit/6f3228b6c0ce6c7fffd44886a6453524e7e9d0ab)) - Karl Hans Laurits
+- add agent issue templates - ([8a387d0](https://github.com/lauritsk/pid/commit/8a387d049b610be9cd16f59f8d4b9b8e624a1964)) - Karl Hans Laurits
+- simplify agent instructions - ([0e1629d](https://github.com/lauritsk/pid/commit/0e1629dc7932eb31d385e56be4bb81f58c861dc2)) - Karl Hans Laurits
+- simplify agent instructions - ([b9e5541](https://github.com/lauritsk/pid/commit/b9e5541d57535b417c1ad248f8aa94fef89db106)) - Karl Hans Laurits
+- rebase orchestrator agent plan - ([3af3ca7](https://github.com/lauritsk/pid/commit/3af3ca7b2a9bc0e9036999785e5bdf05df03cf4d)) - Karl Hans Laurits
+- remove obsolete extensibility roadmap - ([5bac9d2](https://github.com/lauritsk/pid/commit/5bac9d20c6b143430e4647ab8a80db3282c421b2)) - Karl Hans Laurits
+- clean up readme - ([3cfab21](https://github.com/lauritsk/pid/commit/3cfab21b488e616d27468086bc8f3b4448b702b7)) - Karl Hans Laurits
+#### Refactoring
+- remove pre-user legacy baggage - ([8c5345f](https://github.com/lauritsk/pid/commit/8c5345fca984f8d14a8d43867e7084b08db63cb5)) - Karl Hans Laurits
+- deduplicate config and refresh handling - ([5dc12cb](https://github.com/lauritsk/pid/commit/5dc12cbafc53e15951ce6c356e232b027610c345)) - Karl Hans Laurits
+#### Miscellaneous Chores
+- update all deps and tools - ([1d74ee7](https://github.com/lauritsk/pid/commit/1d74ee7b488e00e64f259cd906b7e1a24deb586e)) - Karl Hans Laurits
+- update pid tool locally - ([5998b6e](https://github.com/lauritsk/pid/commit/5998b6edd39d20c94039db71a17c3e3d8642a0d7)) - Karl Hans Laurits
+
+- - -
+
 ## [v0.8.0](https://github.com/lauritsk/pid/compare/8557fb429443974ba1aa3bd10b417bdd45f3a554..v0.8.0) - 2026-04-28
 #### Features
 - render interactive prompts with Rich panels - ([953e99f](https://github.com/lauritsk/pid/commit/953e99f75ba391a5a85198b707cd22b76ae16786)) - Karl Hans Laurits

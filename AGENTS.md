@@ -1,28 +1,45 @@
 # Agent Instructions
 
-Use GitHub Issues for all task tracking.
+Use GitHub Issues for task tracking.
 
 ## GitHub
 
 ```bash
 gh issue list
 gh issue view <number>
+gh issue create \
+  --template agent_task.md \
+  --title "type(scope): concise outcome"
+gh issue create \
+  --template bug_report.md \
+  --title "fix(scope): concise bug summary"
+gh issue create \
+  --template feature_request.md \
+  --title "feat(scope): concise feature summary"
 gh issue edit <number> --add-assignee @me
 gh issue close <number>
 ```
 
-Rules:
+## Templates
 
-- Do not use TodoWrite, TaskCreate, markdown TODO lists, or MEMORY.md for task tracking.
+- Agent work: `.github/ISSUE_TEMPLATE/agent_task.md`
+- Bugs: `.github/ISSUE_TEMPLATE/bug_report.md`
+- Features: `.github/ISSUE_TEMPLATE/feature_request.md`
+- PRs: `.github/pull_request_template.md`
+- Security: follow `SECURITY.md`; no public issue.
+
+## Standards
+
+- Issue and PR titles use Conventional Commits.
+- Record status, decisions, scope changes, validation, and handoff in issue.
+- Use `mise run lint`, `mise run fix`, or `mise run check` for quality gates.
 
 ## Session Completion
 
-Before ending a work session:
-
-1. Check existing issues before starting work.
-2. Run quality gates if code changed.
-3. File, update, or close relevant issues.
-4. Push all committed work:
+1. Check existing issues before work.
+2. Update or close relevant issue.
+3. Run quality gate if code changed.
+4. Push committed work:
 
    ```bash
    git pull --rebase

@@ -20,7 +20,11 @@ import pid.interactive as interactive_module
 from pid.commands import CommandRunner, require_command
 from pid.config import AgentConfig, PIDConfig, load_config, parse_config
 from pid.errors import PIDAbort
-from pid.interactive import resolve_interactive_args
+from pid.interactive import (
+    resolve_agent_start_args,
+    resolve_interactive_args,
+    resolve_orchestrator_start_args,
+)
 from pid.models import CommandResult, OutputMode
 from pid.output import (
     get_session_logger,
@@ -434,6 +438,184 @@ def test_resolve_interactive_args_prompts_all_values_when_empty(
         "guided",
         "prompts",
     ]
+
+
+def test_resolve_agent_start_args_prompts_missing_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    answers = iter(["2", "high", "feature/agent-flow", "polish startup"])
+    monkeypatch.setattr("pid.interactive.click.prompt", lambda *_, **__: next(answers))
+    monkeypatch.setattr("pid.interactive.click.confirm", lambda *_, **__: True)
+
+    assert resolve_agent_start_args([], PIDConfig()) == [
+        "--branch",
+        "feature/agent-flow",
+        "--prompt",
+        "polish startup",
+        "--attempts",
+        "2",
+        "--thinking",
+        "high",
+    ]
+
+
+def test_resolve_agent_start_args_prompts_only_missing_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("pid.interactive.click.prompt", lambda *_, **__: "build thing")
+    monkeypatch.setattr("pid.interactive.click.confirm", lambda *_, **__: True)
+
+    assert resolve_agent_start_args(["--branch", "feature/x"], PIDConfig()) == [
+        "--branch",
+        "feature/x",
+        "--prompt",
+        "build thing",
+        "--attempts",
+        "3",
+        "--thinking",
+        "medium",
+    ]
+
+
+def test_resolve_agent_start_args_preserves_non_promptable_inputs() -> None:
+    config = PIDConfig()
+
+    assert resolve_agent_start_args(["--help"], config) == ["--help"]
+    assert resolve_agent_start_args(["--unknown"], config) == ["--unknown"]
+    assert resolve_agent_start_args(["--non-interactive"], config) == [
+        "--non-interactive"
+    ]
+    assert resolve_agent_start_args(["--branch", "x", "--attempts", "0"], config) == [
+        "--branch",
+        "x",
+        "--attempts",
+        "0",
+    ]
+    assert resolve_agent_start_args(
+        ["--branch", "x", "--thinking", "bogus"], config
+    ) == ["--branch", "x", "--thinking", "bogus"]
+    complete = ["--branch", "x", "--prompt", "p"]
+    assert resolve_agent_start_args(complete, config) == complete
+
+
+def test_resolve_agent_start_args_preserves_start_options(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("pid.interactive.click.prompt", lambda *_, **__: "build thing")
+
+    assert resolve_agent_start_args(
+        [
+            "--branch",
+            "feature/x",
+            "--yes",
+            "--advisor",
+            "pi",
+            "--confirm-merge",
+            "--run-id",
+            "run1",
+            "--parent-run-id",
+            "parent1",
+            "--plan-item-id",
+            "api",
+        ],
+        PIDConfig(),
+    ) == [
+        "--branch",
+        "feature/x",
+        "--prompt",
+        "build thing",
+        "--attempts",
+        "3",
+        "--thinking",
+        "medium",
+        "--yes",
+        "--advisor",
+        "pi",
+        "--confirm-merge",
+        "--run-id",
+        "run1",
+        "--parent-run-id",
+        "parent1",
+        "--plan-item-id",
+        "api",
+    ]
+
+
+def test_resolve_agent_start_args_aborts_on_rejected_confirmation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("pid.interactive.click.prompt", lambda *_, **__: "build thing")
+    monkeypatch.setattr("pid.interactive.click.confirm", lambda *_, **__: False)
+
+    with pytest.raises(click.Abort):
+        resolve_agent_start_args(["--branch", "feature/x"], PIDConfig())
+
+
+def test_resolve_orchestrator_start_args_prompts_happy_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    answers = iter(["Ship larger change", "", "feat", "0", "2"])
+    monkeypatch.setattr("pid.interactive.click.prompt", lambda *_, **__: next(answers))
+    monkeypatch.setattr("pid.interactive.click.confirm", lambda *_, **__: True)
+
+    assert resolve_orchestrator_start_args([], PIDConfig()) == [
+        "--goal",
+        "Ship larger change",
+        "--branch-prefix",
+        "feat",
+        "--concurrency",
+        "2",
+    ]
+
+
+def test_resolve_orchestrator_start_args_preserves_complete_args() -> None:
+    assert resolve_orchestrator_start_args(["--help"], PIDConfig()) == ["--help"]
+    assert resolve_orchestrator_start_args(["--unknown"], PIDConfig()) == ["--unknown"]
+    assert resolve_orchestrator_start_args(["--non-interactive"], PIDConfig()) == [
+        "--non-interactive"
+    ]
+    assert resolve_orchestrator_start_args(
+        ["--goal", "g", "--concurrency", "0"], PIDConfig()
+    ) == ["--goal", "g", "--concurrency", "0"]
+    assert resolve_orchestrator_start_args(
+        ["--goal", "g", "--branch-prefix", "/"], PIDConfig()
+    ) == ["--goal", "g", "--branch-prefix", "/"]
+    assert resolve_orchestrator_start_args(
+        ["--goal", "g", "--plan-file", "plan.json"], PIDConfig()
+    ) == ["--goal", "g", "--plan-file", "plan.json"]
+
+
+def test_resolve_orchestrator_start_args_preserves_start_options(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "pid.interactive.click.prompt", lambda *_, **__: "Ship larger change"
+    )
+
+    assert resolve_orchestrator_start_args(
+        ["--plan-file", "plan.json", "--dry-run", "--yes"], PIDConfig()
+    ) == [
+        "--goal",
+        "Ship larger change",
+        "--branch-prefix",
+        "work",
+        "--concurrency",
+        "4",
+        "--plan-file",
+        "plan.json",
+        "--dry-run",
+        "--yes",
+    ]
+
+
+def test_resolve_orchestrator_start_args_aborts_on_rejected_confirmation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("pid.interactive.click.prompt", lambda *_, **__: "goal")
+    monkeypatch.setattr("pid.interactive.click.confirm", lambda *_, **__: False)
+
+    with pytest.raises(click.Abort):
+        resolve_orchestrator_start_args(["--branch-prefix", "feat"], PIDConfig())
 
 
 def test_resolve_interactive_args_prompts_only_missing_prompt(

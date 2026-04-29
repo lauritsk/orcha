@@ -20,7 +20,11 @@ from pid.extensions import (
     ExtensionRegistry,
     load_enabled_extensions,
 )
-from pid.interactive import resolve_interactive_args
+from pid.interactive import (
+    resolve_agent_start_args,
+    resolve_interactive_args,
+    resolve_orchestrator_start_args,
+)
 from pid.models import OutputMode
 from pid.orchestrator import (
     AgentStartOptions,
@@ -44,8 +48,16 @@ CONFIG_USAGE = "usage: pid config show|default|path"
 SESSIONS_USAGE = "usage: pid sessions [--all|-a]"
 VERSION_USAGE = "usage: pid version"
 X_USAGE = "usage: pid x <extension-command> [ARGS...]"
-AGENT_USAGE = "usage: pid agent start|follow-up|resume|status|runs"
-ORCHESTRATOR_USAGE = "usage: pid orchestrator start|follow-up|status|runs"
+AGENT_USAGE = (
+    "usage: pid agent [start] --branch BRANCH --prompt TEXT [--attempts N] "
+    "[--thinking LEVEL]\n"
+    "       pid agent follow-up|resume|status|runs ..."
+)
+ORCHESTRATOR_USAGE = (
+    "usage: pid orchestrator [start] --goal TEXT [--plan-file plan.json] "
+    "[--branch-prefix PREFIX] [--concurrency N]\n"
+    "       pid orchestrator follow-up|status|runs ..."
+)
 
 app = typer.Typer(add_completion=False, context_settings=APP_CONTEXT)
 
@@ -94,8 +106,8 @@ def main(
 
     Info commands:
 
-    - pid agent start|follow-up|resume|status|runs
-    - pid orchestrator start|follow-up|status|runs
+    - pid agent [start]|follow-up|resume|status|runs
+    - pid orchestrator [start]|follow-up|status|runs
     - pid sessions [--all|-a]
     - pid config show|default|path
     - pid x <extension-command> [ARGS...]
@@ -202,9 +214,17 @@ def _run_info_command(raw_args: list[str], *, config_path: Path | None) -> int |
 def _run_agent_command(
     raw_args: list[str], *, config: PIDConfig, output_mode: OutputMode
 ) -> int:
-    if not raw_args or raw_args[0] in {"--help", "-h"}:
+    if not raw_args:
+        if sys.stdin.isatty():
+            raw_args = ["start"]
+        else:
+            echo_out(AGENT_USAGE)
+            return 0
+    if raw_args[0] in {"--help", "-h"}:
         echo_out(AGENT_USAGE)
         return 0
+    if raw_args[0].startswith("-"):
+        raw_args = ["start", *raw_args]
     if not config.orchestrator.enabled:
         echo_err("pid: orchestrator agent is disabled in config")
         return 2
@@ -259,8 +279,14 @@ def _run_agent_command(
         echo_err(AGENT_USAGE)
         return 2
 
+    start_args = raw_args[1:]
+    if start_args and start_args[0] in {"--help", "-h"}:
+        echo_out(AGENT_USAGE)
+        return 0
+    if sys.stdin.isatty():
+        start_args = resolve_agent_start_args(start_args, config)
     try:
-        options = _parse_agent_start(raw_args[1:])
+        options = _parse_agent_start(start_args)
     except ValueError as error:
         echo_err(f"pid: {error}")
         echo_err(
@@ -354,9 +380,17 @@ def _run_orchestrator_command(
     output_mode: OutputMode,
     config_path: Path | None,
 ) -> int:
-    if not raw_args or raw_args[0] in {"--help", "-h"}:
+    if not raw_args:
+        if sys.stdin.isatty():
+            raw_args = ["start"]
+        else:
+            echo_out(ORCHESTRATOR_USAGE)
+            return 0
+    if raw_args[0] in {"--help", "-h"}:
         echo_out(ORCHESTRATOR_USAGE)
         return 0
+    if raw_args[0].startswith("-"):
+        raw_args = ["start", *raw_args]
     if not config.orchestrator.enabled:
         echo_err("pid: orchestrator agent is disabled in config")
         return 2
@@ -413,7 +447,13 @@ def _run_orchestrator_command(
         return 2
 
     try:
-        options = _parse_orchestrator_start(raw_args[1:], config_path=config_path)
+        start_args = raw_args[1:]
+        if start_args and start_args[0] in {"--help", "-h"}:
+            echo_out(ORCHESTRATOR_USAGE)
+            return 0
+        if sys.stdin.isatty():
+            start_args = resolve_orchestrator_start_args(start_args, config)
+        options = _parse_orchestrator_start(start_args, config_path=config_path)
         supervisor = OrchestratorSupervisor(
             config=config, store=store, output_mode=output_mode
         )

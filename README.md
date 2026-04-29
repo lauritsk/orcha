@@ -74,30 +74,37 @@ Create the default config file:
 pid init
 ```
 
-Run a non-interactive workflow:
+Recommended single-PR flow: start supervised agent mode with durable run state.
+In a terminal, `pid agent` prompts for missing startup values; in scripts, pass
+options explicitly:
 
 ```sh
-pid run feature/add-docs "add project documentation"
-```
-
-Or start supervised agent mode with durable run state:
-
-```sh
-pid agent start --branch feature/add-docs --prompt "add project documentation"
+pid agent
+pid agent --branch feature/add-docs --prompt "add project documentation"
 pid agent follow-up <run-id> --message "Use the new API name everywhere"
 pid agent runs
 pid agent status <run-id>
 ```
 
-Start an orchestrator run. Without a plan file it prints intake questions to
-answer before child launch; with an approved JSON plan it creates child run
-records and launches dependency-free children in parallel unless `--dry-run` is
-set:
+Recommended larger-change flow: start an orchestrator. In a terminal,
+`pid orchestrator` prompts for the goal and launch defaults. Without a plan file
+it prints intake questions to answer before child launch; with an approved JSON
+plan it creates child run records and launches dependency-free children in
+parallel unless `--dry-run` is set:
 
 ```sh
-pid orchestrator start --goal "ship the larger change"
-pid orchestrator start --goal "ship the larger change" --plan-file plan.json
+pid orchestrator
+pid orchestrator --goal "ship the larger change"
+pid orchestrator --goal "ship the larger change" --plan-file plan.json
 pid orchestrator follow-up <run-id> --target api --message "Rename endpoint to /v2/tasks"
+```
+
+Direct workflow shortcut: `pid`/`pid run` still exists as the fast, unsupervised
+single-branch executor and as the internal workflow engine. It is not a separate
+product path; agent and orchestrator are modes of the same `pid` executable.
+
+```sh
+pid run feature/add-docs "add project documentation"
 ```
 
 Run an interactive agent session and let pid resume after the session exits:
@@ -121,12 +128,12 @@ pid
 pid [OPTIONS] [ATTEMPTS] [THINKING] BRANCH PROMPT...
 pid [OPTIONS] run [ATTEMPTS] [THINKING] BRANCH PROMPT...
 pid [OPTIONS] session [ATTEMPTS] [THINKING] BRANCH [PROMPT...]
-pid agent start --branch BRANCH --prompt TEXT [--attempts N] [--thinking LEVEL]
+pid agent [start] --branch BRANCH --prompt TEXT [--attempts N] [--thinking LEVEL]
 pid agent follow-up RUN_ID --message TEXT [--type TYPE]
 pid agent status RUN_ID
 pid agent runs
 pid agent resume RUN_ID
-pid orchestrator start --goal TEXT [--plan-file plan.json] [--dry-run]
+pid orchestrator [start] --goal TEXT [--plan-file plan.json] [--dry-run]
 pid orchestrator follow-up RUN_ID --message TEXT [--target ITEM|--all]
 pid orchestrator status RUN_ID
 pid orchestrator runs
@@ -158,12 +165,12 @@ pid --version
 | `--output agent` | Also show successful agent stderr. |
 | `--output all` | Show successful output from every captured command. Full logs are always written to the session log. |
 | `pid init` | Write recommended defaults to the platform config path. Refuses to overwrite an existing file. |
-| `pid agent start` | Run supervised workflow mode. Stores state under the git common dir by default. |
+| `pid agent`, `pid agent start` | Run supervised workflow mode. Stores state under the git common dir by default. In a TTY, missing startup options are prompted. |
 | `pid agent follow-up RUN_ID` | Queue a durable follow-up for a supervised run. Running children apply it at the next safe checkpoint. |
 | `pid agent status RUN_ID` | Show current step, status, PR URL, failure, and follow-up counts for a run. |
 | `pid agent runs` | List recent supervised runs. |
 | `pid agent resume RUN_ID` | Reserved for resumable recovery; currently reports saved state and exits with guidance. |
-| `pid orchestrator start` | Create a larger-run coordinator. Without `--plan-file`, prints intake questions; with a plan, creates child runs and launches ready children. |
+| `pid orchestrator`, `pid orchestrator start` | Create a larger-run coordinator. In a TTY, missing startup options are prompted. Without `--plan-file`, prints intake questions; with a plan, creates child runs and launches ready children. |
 | `pid orchestrator follow-up RUN_ID` | Record a global follow-up or route it to child run inboxes with `--target` or `--all`. |
 | `pid orchestrator status RUN_ID` | Show orchestrator status and child run IDs/statuses. |
 | `pid orchestrator runs` | List recent orchestrator runs. |

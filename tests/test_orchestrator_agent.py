@@ -124,6 +124,26 @@ def test_agent_start_runs_workflow_and_persists_state(tmp_path: Path) -> None:
     assert states[0].with_name("events.jsonl").exists()
 
 
+def test_agent_start_allows_startless_happy_path(tmp_path: Path) -> None:
+    process, final_state = run_pid(
+        tmp_path,
+        [
+            "agent",
+            "--branch",
+            "feature/cool-stuff",
+            "--prompt",
+            "prompt",
+        ],
+        state=base_state(tmp_path),
+    )
+
+    assert_success(process)
+    assert "pid: agent run" in process.stdout
+    runs_root = Path(final_state["common_git_dir"]) / "pid" / "runs"
+    state = json.loads(next(runs_root.glob("*/state.json")).read_text())
+    assert state["status"] == "succeeded"
+
+
 def test_agent_start_marks_no_changes_done(tmp_path: Path) -> None:
     process, final_state = run_pid(
         tmp_path,
@@ -463,6 +483,21 @@ def test_workflow_pause_follow_up_stops_at_checkpoint(tmp_path: Path) -> None:
 
     assert caught.value.kind == FailureKind.FOLLOWUP_PAUSED
     assert store.read_state(run_id)["last_applied_follow_up_id"] == "fu-000001"
+
+
+def test_orchestrator_startless_happy_path_creates_intake(tmp_path: Path) -> None:
+    process, final_state = run_pid(
+        tmp_path,
+        ["orchestrator", "--goal", "Ship larger change"],
+        state=base_state(tmp_path),
+    )
+
+    assert_success(process)
+    assert "pid: orchestrator run" in process.stdout
+    runs_root = Path(final_state["common_git_dir"]) / "pid" / "runs"
+    state = json.loads(next(runs_root.glob("*/state.json")).read_text())
+    assert state["run_type"] == "orchestrator"
+    assert state["status"] == "awaiting_plan"
 
 
 def test_orchestrator_start_without_plan_grills_user(

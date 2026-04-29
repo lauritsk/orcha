@@ -177,6 +177,14 @@ class RunStore:
             "applied_follow_up_count": 0,
             "last_follow_up_id": "",
             "last_applied_follow_up_id": "",
+            "workflow": {
+                "current_step": "",
+                "last_step": "",
+                "last_outcome": None,
+                "last_failure": None,
+                "steps": {},
+                "history": [],
+            },
         }
         if extra:
             state.update(extra)
@@ -549,20 +557,9 @@ def _workflow_record(
     """Return mutable workflow state and per-step record."""
 
     workflow = state.setdefault("workflow", {})
-    if not isinstance(workflow, dict):
-        workflow = {}
-        state["workflow"] = workflow
     steps = workflow.setdefault("steps", {})
-    if not isinstance(steps, dict):
-        steps = {}
-        workflow["steps"] = steps
     record = steps.setdefault(step_id, {})
-    if not isinstance(record, dict):
-        record = {}
-        steps[step_id] = record
-    history = workflow.setdefault("history", [])
-    if not isinstance(history, list):
-        workflow["history"] = []
+    workflow.setdefault("history", [])
     return workflow, record
 
 

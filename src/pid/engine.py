@@ -80,12 +80,6 @@ class WorkflowEngine:
         self.retry_limit = retry_limit
         self.current_step = ""
 
-    @property
-    def durable(self) -> bool:
-        """Return true when step state should be persisted."""
-
-        return self.store is not None and bool(self.run_id)
-
     def execute_step(
         self,
         ctx: WorkflowContextLike,

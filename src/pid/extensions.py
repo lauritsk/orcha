@@ -160,12 +160,9 @@ class ExtensionRegistry:
             _StepInsertion(workflow_step, before, after, self._registration_index)
         )
 
-    def replace_step(
-        self, name: str, step: WorkflowStep | StepHandler, *, step_name: str = ""
-    ) -> None:
-        """Replace a built-in step implementation while preserving its stable id."""
+    def replace_step(self, name: str, step: WorkflowStep | StepHandler) -> None:
+        """Replace a step implementation while preserving its stable id."""
 
-        del step_name
         self._require_name(name, "step")
         workflow_step = self._coerce_step(step, name=name)
         self.replaced_steps[name] = WorkflowStep(name, workflow_step.run)
@@ -221,7 +218,7 @@ class ExtensionRegistry:
             known_names=set(known_steps) | external_step_names,
         )
 
-        resolved = self._active_default_steps(steps)
+        resolved = steps.copy()
         for insertion in sorted(
             self.added_steps, key=lambda item: item.registration_index
         ):
@@ -243,13 +240,6 @@ class ExtensionRegistry:
             missing = sorted(missing_replacements)[0]
             raise ExtensionError(f"cannot replace unknown step: {missing}")
 
-    def _active_default_steps(self, steps: list[WorkflowStep]) -> list[WorkflowStep]:
-        return [
-            self.replaced_steps.get(step.name, step)
-            for step in steps
-            if step.name not in self.disabled_steps
-        ]
-
     def _apply_step_insertion(
         self,
         resolved: list[WorkflowStep],
@@ -258,9 +248,6 @@ class ExtensionRegistry:
         external_step_names: set[str],
         include_unanchored: bool,
     ) -> None:
-        if insertion.step.name in self.disabled_steps:
-            return
-
         names = [step.name for step in resolved]
         if insertion.step.name in names:
             raise ExtensionError(f"step already registered: {insertion.step.name}")

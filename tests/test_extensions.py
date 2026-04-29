@@ -82,10 +82,16 @@ def test_registry_adds_replaces_disables_steps_and_orders_hooks() -> None:
         ]
     )
 
-    assert [item.name for item in steps] == ["one", "middle", "two"]
-    registry.run_hooks("before.one", object())
+    assert [item.name for item in steps] == ["one", "middle", "two", "three"]
+
+    class Context:
+        def emit(self, *_args: Any, **_kwargs: Any) -> None:
+            return
+
+    engine = PIDFlow(load_extensions=False).engine
+    context = Context()
     for item in steps:
-        item.run(object())
+        engine.execute_step(context, item, registry)
     assert seen == ["early", "late", "one", "middle", "two-replaced"]
 
 
@@ -908,7 +914,7 @@ def test_registry_resolve_steps_covers_before_append_and_duplicate_insertions() 
     assert [
         step.name
         for step in disabled.resolve_steps([WorkflowStep("one", lambda _ctx: None)])
-    ] == ["one"]
+    ] == ["one", "extra"]
 
 
 def test_extension_loader_edge_cases(

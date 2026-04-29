@@ -284,7 +284,6 @@ def test_workflow_engine_persists_step_start_end_and_failure(tmp_path: Path) -> 
     state = store.create_run(branch="feature/step", prompt="prompt", argv=[])
     run_id = str(state["run_id"])
     flow = PIDFlow(load_extensions=False, run_store=store, run_id=run_id)
-    assert flow.engine.durable is True
     ctx = cast(
         WorkflowContext,
         SimpleNamespace(scratch={}, emit=lambda *_args, **_kwargs: None),

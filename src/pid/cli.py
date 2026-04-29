@@ -77,20 +77,6 @@ def main(
             help="Show pid version and exit.",
         ),
     ] = False,
-    print_current_config: Annotated[
-        bool,
-        typer.Option(
-            "--print-config",
-            help="Print loaded config as TOML and exit.",
-        ),
-    ] = False,
-    print_default_config: Annotated[
-        bool,
-        typer.Option(
-            "--print-default-config",
-            help="Print built-in default config as TOML and exit.",
-        ),
-    ] = False,
 ) -> None:
     """Run pid. Use `pid init` to create the default config.
 
@@ -110,10 +96,6 @@ def main(
     if command_exit is not None:
         raise typer.Exit(command_exit)
 
-    if print_default_config:
-        typer.echo(config_to_toml(PIDConfig()), nl=False)
-        raise typer.Exit(0)
-
     try:
         if raw_args and raw_args[0] == "init":
             if config is not None:
@@ -131,10 +113,6 @@ def main(
     except PIDAbort as error:
         raise typer.Exit(error.code) from error
 
-    if print_current_config:
-        typer.echo(config_to_toml(loaded_config), nl=False)
-        raise typer.Exit(0)
-
     try:
         resolved_args = (
             resolve_interactive_args(raw_args, loaded_config)
@@ -151,13 +129,13 @@ def _run_info_command(raw_args: list[str], *, config_path: Path | None) -> int |
     if not raw_args:
         return None
 
-    if raw_args in (["config", "path"], ["config-path"]):
+    if raw_args == ["config", "path"]:
         typer.echo(print_config_metadata(config_path=config_path), nl=False)
         return 0
-    if raw_args in (["config", "default"], ["default-config"]):
+    if raw_args == ["config", "default"]:
         typer.echo(config_to_toml(PIDConfig()), nl=False)
         return 0
-    if raw_args in (["config", "show"], ["config", "current"]):
+    if raw_args == ["config", "show"]:
         try:
             loaded_config = load_config(config_path)
         except PIDAbort as error:
@@ -172,15 +150,10 @@ def _run_info_command(raw_args: list[str], *, config_path: Path | None) -> int |
     if raw_args[0] == "x":
         return _run_extension_command(raw_args[1:], config_path=config_path)
 
-    if raw_args in (["sessions"], ["sessions", "list"]):
+    if raw_args == ["sessions"]:
         typer.echo(active_sessions_table(), nl=False)
         return 0
-    if raw_args in (
-        ["sessions", "--all"],
-        ["sessions", "-a"],
-        ["sessions", "list", "--all"],
-        ["sessions", "list", "-a"],
-    ):
+    if raw_args in (["sessions", "--all"], ["sessions", "-a"]):
         typer.echo(active_sessions_table(include_all=True), nl=False)
         return 0
     if raw_args[0] == "sessions":

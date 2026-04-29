@@ -934,13 +934,9 @@ def test_extension_loader_edge_cases(
         )
     assert "could not load extension bad" in str(bad_load.value)
 
-    class OldEntryPoints(dict):
-        def select(self, **_kwargs):
-            raise AttributeError
-
     monkeypatch.setattr(
         "pid.extensions.importlib.metadata.entry_points",
-        lambda: {"pid.extensions": [OtherEntryPoint()]},
+        lambda group: [OtherEntryPoint()] if group == "pid.extensions" else [],
     )
     assert _entry_points()[0].name == "other"
 

@@ -15,7 +15,7 @@ from pid.config import PIDConfig
 
 
 def resolve_interactive_args(argv: list[str], config: PIDConfig) -> list[str]:
-    """Prompt for missing pid arguments, then return fish-compatible argv."""
+    """Prompt for missing pid arguments, then return argv."""
 
     if argv and argv[0] in {"--help", "-h"}:
         return argv

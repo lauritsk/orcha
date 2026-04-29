@@ -453,10 +453,7 @@ def _enabled_names(extension_config: Any) -> set[str]:
 
 
 def _entry_points() -> list[importlib.metadata.EntryPoint]:
-    entry_points = importlib.metadata.entry_points()
-    if hasattr(entry_points, "select"):
-        return list(entry_points.select(group=ENTRY_POINT_GROUP))
-    return list(entry_points.get(ENTRY_POINT_GROUP, ()))  # type: ignore[attr-defined]
+    return list(importlib.metadata.entry_points(group=ENTRY_POINT_GROUP))
 
 
 def _coerce_extension_object(loaded: Any) -> Any:

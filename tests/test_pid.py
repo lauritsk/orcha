@@ -32,7 +32,7 @@ def test_app_shows_typer_help() -> None:
     assert "pid sessions [--all|-a]" in output
     assert "pid config show|default|path" in output
     assert "--output" in output
-    assert "agent, or all" in output
+    assert "normal|agent|all" in output
     assert "Show this message" in output
 
 
@@ -120,16 +120,6 @@ def test_bare_config_command_returns_usage_error() -> None:
     assert "usage: pid config show|default|path" in result.stderr
 
 
-def test_current_config_option_prints_loaded_config(tmp_path: Path) -> None:
-    config_path = tmp_path / "config.toml"
-    config_path.write_text('[agent]\nlabel = "bot"\n')
-
-    result = runner.invoke(app, ["--config", str(config_path), "--print-config"])
-
-    assert result.exit_code == 0
-    assert 'label = "bot"' in result.output
-
-
 def test_current_config_command_prints_loaded_config(tmp_path: Path) -> None:
     config_path = tmp_path / "config.toml"
     config_path.write_text('[agent]\nlabel = "bot"\n')
@@ -158,13 +148,6 @@ def test_config_path_command_prints_paths(tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert f'config_path = "{config_path}"' in result.output
     assert "log_dir = " in result.output
-
-
-def test_print_default_config_option_prints_toml() -> None:
-    result = runner.invoke(app, ["--print-default-config"])
-
-    assert result.exit_code == 0
-    assert "[agent]" in result.output
 
 
 def test_sessions_lists_active_logs(tmp_path: Path) -> None:

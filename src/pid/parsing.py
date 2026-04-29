@@ -20,7 +20,7 @@ def parse_args(
     default_thinking: str = "medium",
     thinking_levels: tuple[str, ...] = THINKING_LEVELS,
 ) -> ParsedArgs:
-    """Parse pid's fish-compatible positional argument format."""
+    """Parse pid's positional argument format."""
 
     if not argv or argv[0] in {"--help", "-h"}:
         echo_out(USAGE)

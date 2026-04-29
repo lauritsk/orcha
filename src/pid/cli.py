@@ -20,6 +20,7 @@ from pid.extensions import (
     load_enabled_extensions,
 )
 from pid.interactive import (
+    default_branch_prefix,
     resolve_agent_start_args,
     resolve_interactive_args,
     resolve_orchestrator_start_args,
@@ -47,13 +48,24 @@ CONFIG_USAGE = "usage: pid config show|default|path"
 SESSIONS_USAGE = "usage: pid sessions [--all|-a]"
 VERSION_USAGE = "usage: pid version"
 X_USAGE = "usage: pid x <extension-command> [ARGS...]"
+TOP_LEVEL_USAGE = """usage: pid <command> [ARGS...]
+
+What do you want pid to do?
+
+1. Run agents myself        pid agent  (alias: pid a)
+2. Let orchestrator manage  pid orchestrator  (alias: pid o)
+
+Advanced:
+  pid run <branch> <prompt>
+  pid session <branch> [prompt]
+"""
 AGENT_USAGE = (
-    "usage: pid agent [start] --branch BRANCH --prompt TEXT [--attempts N] "
+    "usage: pid agent|a [start] --branch BRANCH --prompt TEXT [--attempts N] "
     "[--thinking LEVEL]\n"
     "       pid agent follow-up|status|runs ..."
 )
 ORCHESTRATOR_USAGE = (
-    "usage: pid orchestrator [start] --goal TEXT [--plan-file plan.json] "
+    "usage: pid orchestrator|o [start] --goal TEXT [--plan-file plan.json] "
     "[--branch-prefix PREFIX] [--concurrency N]\n"
     "       pid orchestrator follow-up|status|runs ..."
 )
@@ -157,11 +169,19 @@ def _orchestrator_start_options(
         typer.Option("--plan-file", help="Structured plan JSON to launch."),
     ] = None,
     branch_prefix: Annotated[
-        str, typer.Option("--branch-prefix", help="Prefix for child branches.")
-    ] = "work",
+        str,
+        typer.Option(
+            "--branch-prefix",
+            help="Prefix for child branches. Default is generated from goal.",
+        ),
+    ] = "",
     concurrency: Annotated[
-        int, typer.Option("--concurrency", help="Maximum concurrent child runs.")
-    ] = 4,
+        int,
+        typer.Option(
+            "--concurrency",
+            help="Maximum concurrent child runs. Default comes from config.",
+        ),
+    ] = 0,
     dry_run: Annotated[
         bool, typer.Option("--dry-run", help="Plan child runs without launching them.")
     ] = False,
@@ -174,16 +194,13 @@ def _orchestrator_start_options(
 ) -> OrchestratorStartOptions:
     """Parse `pid orchestrator start` options with Typer."""
 
-    del yes
     if ctx.args:
         raise ValueError(f"unexpected orchestrator arguments: {' '.join(ctx.args)}")
     goal = goal.strip()
     branch_prefix = branch_prefix.strip().strip("/")
     if not goal:
         raise ValueError("--goal must be non-empty")
-    if not branch_prefix:
-        raise ValueError("--branch-prefix must be non-empty")
-    if concurrency < 1:
+    if concurrency < 0:
         raise ValueError("--concurrency must be a positive integer")
     return OrchestratorStartOptions(
         goal=goal,
@@ -192,6 +209,7 @@ def _orchestrator_start_options(
         concurrency=concurrency,
         dry_run=dry_run,
         non_interactive=non_interactive,
+        yes=yes,
     )
 
 
@@ -237,8 +255,8 @@ def main(
     args: Annotated[
         list[str] | None,
         typer.Argument(
-            help="Optional session mode, attempts, thinking level, branch, then prompt words.",
-            metavar="[session] [ATTEMPTS] [THINKING] BRANCH [PROMPT...]",
+            help="Command plus arguments. Use `pid agent` or `pid orchestrator` for primary flows.",
+            metavar="COMMAND [ARGS...]",
         ),
     ] = None,
     config: Annotated[
@@ -275,8 +293,10 @@ def main(
 
     Info commands:
 
-    - pid agent [start]|follow-up|status|runs
-    - pid orchestrator [start]|follow-up|status|runs
+    - pid agent|a start|follow-up|status|runs
+    - pid orchestrator|o start|follow-up|status|runs
+    - pid run BRANCH PROMPT...
+    - pid session BRANCH [PROMPT...]
     - pid sessions [--all|-a]
     - pid config show|default|path
     - pid x <extension-command> [ARGS...]
@@ -308,11 +328,17 @@ def main(
     except PIDAbort as error:
         raise typer.Exit(error.code) from error
 
-    if raw_args and raw_args[0] == "agent":
+    if not raw_args:
+        if not sys.stdin.isatty():
+            echo_out(TOP_LEVEL_USAGE)
+            raise typer.Exit(0)
+        raw_args = _prompt_top_level_command()
+
+    if raw_args and raw_args[0] in {"agent", "a"}:
         raise typer.Exit(
             _run_agent_command(raw_args[1:], config=loaded_config, output_mode=output)
         )
-    if raw_args and raw_args[0] == "orchestrator":
+    if raw_args and raw_args[0] in {"orchestrator", "o"}:
         raise typer.Exit(
             _run_orchestrator_command(
                 raw_args[1:],
@@ -323,6 +349,10 @@ def main(
         )
     if raw_args and raw_args[0] == "run":
         raw_args = raw_args[1:]
+    elif raw_args and raw_args[0] != "session":
+        echo_err(f"pid: unknown command: {raw_args[0]}")
+        echo_out(TOP_LEVEL_USAGE)
+        raise typer.Exit(2)
 
     try:
         resolved_args = (
@@ -334,6 +364,21 @@ def main(
         raise typer.Exit(error.code) from error
 
     raise typer.Exit(run_pid(resolved_args, config=loaded_config, output_mode=output))
+
+
+def _prompt_top_level_command() -> list[str]:
+    """Prompt for the two primary product paths."""
+
+    echo_out("What do you want pid to do?\n")
+    echo_out("1. Run agents myself        pid agent")
+    echo_out("2. Let orchestrator manage  pid orchestrator")
+    while True:
+        choice = str(typer.prompt("Choose 1 or 2", default="1")).strip().lower()
+        if choice in {"1", "a", "agent"}:
+            return ["agent"]
+        if choice in {"2", "o", "orchestrator"}:
+            return ["orchestrator"]
+        echo_err("pid: choose 1 or 2")
 
 
 def _run_info_command(raw_args: list[str], *, config_path: Path | None) -> int | None:
@@ -568,7 +613,9 @@ def _run_orchestrator_command(
             return 0
         if sys.stdin.isatty():
             start_args = resolve_orchestrator_start_args(start_args, config)
-        options = _parse_orchestrator_start(start_args, config_path=config_path)
+        options = _parse_orchestrator_start(
+            start_args, config=config, config_path=config_path
+        )
         supervisor = OrchestratorSupervisor(
             config=config, store=store, output_mode=output_mode
         )
@@ -631,7 +678,7 @@ def _prompt_orchestrator_intake_answers(
 
 
 def _parse_orchestrator_start(
-    raw_args: list[str], *, config_path: Path | None
+    raw_args: list[str], *, config: PIDConfig, config_path: Path | None
 ) -> OrchestratorStartOptions:
     options: OrchestratorStartOptions = parse_typer_args(
         _ORCHESTRATOR_START_PARSER,
@@ -639,15 +686,22 @@ def _parse_orchestrator_start(
         prog_name="pid orchestrator start",
         error_message="invalid orchestrator start options",
     )
+    if options.concurrency == 0 and _option_present(raw_args, "--concurrency"):
+        raise ValueError("--concurrency must be a positive integer")
     return OrchestratorStartOptions(
         goal=options.goal,
         plan_file=options.plan_file,
-        branch_prefix=options.branch_prefix,
-        concurrency=options.concurrency,
+        branch_prefix=options.branch_prefix or default_branch_prefix(options.goal),
+        concurrency=options.concurrency or config.orchestrator.max_parallel_agents,
         dry_run=options.dry_run,
         non_interactive=options.non_interactive,
         config_path=config_path,
+        yes=options.yes,
     )
+
+
+def _option_present(raw_args: list[str], name: str) -> bool:
+    return any(arg == name or arg.startswith(f"{name}=") for arg in raw_args)
 
 
 def _parse_orchestrator_follow_up(raw_args: list[str]) -> OrchestratorFollowUpOptions:

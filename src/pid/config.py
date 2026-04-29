@@ -34,6 +34,8 @@ keep_screen_awake = false
 [orchestrator]
 enabled = true
 store_dir = ""
+max_parallel_agents = 4
+validation_commands = []
 
 [commit]
 verifier_command = ["cog"]
@@ -252,6 +254,8 @@ class OrchestratorConfig:
 
     enabled: bool = True
     store_dir: str = ""
+    max_parallel_agents: int = 4
+    validation_commands: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -634,7 +638,12 @@ def parse_runtime_config(data: Any, path: Path) -> RuntimeConfig:
 
 
 def parse_orchestrator_config(data: Any, path: Path) -> OrchestratorConfig:
-    data = config_section(data, path, "orchestrator", {"enabled", "store_dir"})
+    data = config_section(
+        data,
+        path,
+        "orchestrator",
+        {"enabled", "store_dir", "max_parallel_agents", "validation_commands"},
+    )
 
     default = OrchestratorConfig()
     enabled = boolean_value(
@@ -643,9 +652,30 @@ def parse_orchestrator_config(data: Any, path: Path) -> OrchestratorConfig:
     store_dir = string_value(
         data.get("store_dir", default.store_dir), path, "orchestrator.store_dir"
     )
+    max_parallel_agents = integer_value(
+        data.get("max_parallel_agents", default.max_parallel_agents),
+        path,
+        "orchestrator.max_parallel_agents",
+    )
+    validation_commands = string_tuple(
+        data.get("validation_commands", default.validation_commands),
+        path,
+        "orchestrator.validation_commands",
+    )
     if store_dir and not Path(store_dir).expanduser().is_absolute():
         fail_config(path, "orchestrator.store_dir must be an absolute path")
-    return OrchestratorConfig(enabled=enabled, store_dir=store_dir)
+    if max_parallel_agents < 1:
+        fail_config(path, "orchestrator.max_parallel_agents must be positive")
+    if any(not command.strip() for command in validation_commands):
+        fail_config(
+            path, "orchestrator.validation_commands must not contain empty strings"
+        )
+    return OrchestratorConfig(
+        enabled=enabled,
+        store_dir=store_dir,
+        max_parallel_agents=max_parallel_agents,
+        validation_commands=validation_commands,
+    )
 
 
 def parse_commit_config(data: Any, path: Path) -> CommitConfig:

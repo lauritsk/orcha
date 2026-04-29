@@ -52,6 +52,8 @@ def test_orchestrator_config_defaults_enabled(tmp_path: Path) -> None:
 
     assert config.orchestrator.enabled is True
     assert config.orchestrator.store_dir == ""
+    assert config.orchestrator.max_parallel_agents == 4
+    assert config.orchestrator.validation_commands == ()
 
 
 def test_orchestrator_config_can_disable_agent(tmp_path: Path) -> None:
@@ -139,6 +141,19 @@ def test_agent_start_allows_startless_happy_path(tmp_path: Path) -> None:
 
     assert_success(process)
     assert "pid: agent run" in process.stdout
+    runs_root = Path(final_state["common_git_dir"]) / "pid" / "runs"
+    state = json.loads(next(runs_root.glob("*/state.json")).read_text())
+    assert state["status"] == "succeeded"
+
+
+def test_agent_short_alias_starts_supervised_run(tmp_path: Path) -> None:
+    process, final_state = run_pid(
+        tmp_path,
+        ["a", "--branch", "feature/cool-stuff", "--prompt", "prompt"],
+        state=base_state(tmp_path),
+    )
+
+    assert_success(process)
     runs_root = Path(final_state["common_git_dir"]) / "pid" / "runs"
     state = json.loads(next(runs_root.glob("*/state.json")).read_text())
     assert state["status"] == "succeeded"
@@ -475,6 +490,20 @@ def test_orchestrator_startless_happy_path_creates_intake(tmp_path: Path) -> Non
     state = json.loads(next(runs_root.glob("*/state.json")).read_text())
     assert state["run_type"] == "orchestrator"
     assert state["status"] == "awaiting_plan"
+    assert state["branch_prefix"] == "ship-larger-change"
+
+
+def test_orchestrator_short_alias_creates_intake(tmp_path: Path) -> None:
+    process, final_state = run_pid(
+        tmp_path,
+        ["o", "--goal", "Ship larger change"],
+        state=base_state(tmp_path),
+    )
+
+    assert_success(process)
+    runs_root = Path(final_state["common_git_dir"]) / "pid" / "runs"
+    state = json.loads(next(runs_root.glob("*/state.json")).read_text())
+    assert state["run_type"] == "orchestrator"
 
 
 def test_orchestrator_start_without_plan_grills_user(

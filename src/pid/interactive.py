@@ -306,7 +306,6 @@ def resolve_agent_start_args(argv: list[str], config: PIDConfig) -> list[str]:
 def resolve_orchestrator_start_args(argv: list[str], config: PIDConfig) -> list[str]:
     """Prompt for missing `pid orchestrator start` options, then return argv."""
 
-    del config
     if argv and argv[0] in {"--help", "-h"}:
         return argv
 
@@ -320,8 +319,10 @@ def resolve_orchestrator_start_args(argv: list[str], config: PIDConfig) -> list[
 
     goal = str(namespace.goal or "").strip()
     plan_file = str(namespace.plan_file or "").strip()
-    branch_prefix = str(namespace.branch_prefix or "work").strip().strip("/")
-    concurrency = str(namespace.concurrency or "4").strip()
+    branch_prefix = str(namespace.branch_prefix or "").strip().strip("/")
+    concurrency = str(
+        namespace.concurrency or config.orchestrator.max_parallel_agents
+    ).strip()
     prompt_all_defaults = not argv
     prompted = False
     display = _InteractiveDisplay(title="pid orchestrator start")
@@ -342,10 +343,12 @@ def resolve_orchestrator_start_args(argv: list[str], config: PIDConfig) -> list[
             display=display,
         )
         prompted = True
+    if not branch_prefix:
+        branch_prefix = default_branch_prefix(goal)
     if namespace.branch_prefix is None and prompt_all_defaults:
         branch_prefix = _prompt_required(
             "Branch prefix",
-            example="work",
+            example=branch_prefix,
             values=_orchestrator_values(goal, plan_file, branch_prefix, concurrency),
             display=display,
             default=branch_prefix,
@@ -379,6 +382,14 @@ def resolve_orchestrator_start_args(argv: list[str], config: PIDConfig) -> list[
         branch_prefix=branch_prefix,
         concurrency=concurrency,
     )
+
+
+def default_branch_prefix(goal: str) -> str:
+    """Return branch-prefix default generated from the orchestrator goal."""
+
+    lowered = goal.strip().lower()
+    slug = re.sub(r"[^a-z0-9]+", "-", lowered).strip("-")
+    return slug[:48].strip("-") or "work"
 
 
 def _parse_agent_start_partial(

@@ -61,11 +61,12 @@ class OrchestratorStartOptions:
 
     goal: str
     plan_file: Path | None = None
-    branch_prefix: str = "work"
-    concurrency: int = 4
+    branch_prefix: str = ""
+    concurrency: int = 0
     dry_run: bool = False
     non_interactive: bool = False
     config_path: Path | None = None
+    yes: bool = False
 
 
 @dataclass(frozen=True)
@@ -201,12 +202,18 @@ class OrchestratorSupervisor:
         """Create an orchestrator run, ask intake, and launch ready children."""
 
         questions = list(INTAKE_QUESTIONS)
+        branch_prefix = options.branch_prefix or slug(options.goal) or "work"
+        concurrency = (
+            options.concurrency or self.config.orchestrator.max_parallel_agents
+        )
+        validation_commands = list(self.config.orchestrator.validation_commands)
         if options.plan_file is None:
             state = self.store.create_orchestrator_run(
                 goal=options.goal,
                 questions=questions,
-                branch_prefix=options.branch_prefix,
-                concurrency=options.concurrency,
+                branch_prefix=branch_prefix,
+                concurrency=concurrency,
+                validation_commands=validation_commands,
                 status="needs_answers" if options.non_interactive else "awaiting_plan",
             )
             return OrchestratorRunResult(
@@ -218,8 +225,9 @@ class OrchestratorSupervisor:
             goal=options.goal,
             questions=questions,
             plan=raw_plan,
-            branch_prefix=options.branch_prefix,
-            concurrency=options.concurrency,
+            branch_prefix=branch_prefix,
+            concurrency=concurrency,
+            validation_commands=validation_commands,
             status="planned",
         )
         run_id = str(state["run_id"])
@@ -227,7 +235,7 @@ class OrchestratorSupervisor:
             raw_plan,
             goal=options.goal,
             parent_run_id=run_id,
-            branch_prefix=options.branch_prefix,
+            branch_prefix=branch_prefix,
             config=self.config,
         )
         for child in children:
@@ -263,7 +271,7 @@ class OrchestratorSupervisor:
             parent_run_id=run_id,
             config_path=options.config_path,
             default_thinking=self.config.agent.default_thinking,
-            concurrency=options.concurrency,
+            concurrency=concurrency,
         )
         state = self.store.read_state(run_id)
         state["children"] = launched
@@ -389,7 +397,13 @@ def build_child_records(
             item.get("acceptance", item.get("acceptance_criteria", []))
         )
         validation = string_list(
-            item.get("validation", item.get("validation_commands", []))
+            item.get(
+                "validation",
+                item.get(
+                    "validation_commands",
+                    list(config.orchestrator.validation_commands),
+                ),
+            )
         )
         dependencies = [
             slug(value) for value in string_list(item.get("dependencies", []))

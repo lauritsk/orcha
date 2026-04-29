@@ -99,9 +99,10 @@ pid orchestrator --goal "ship the larger change" --plan-file plan.json
 pid orchestrator follow-up <run-id> --target api --message "Rename endpoint to /v2/tasks"
 ```
 
-Direct workflow shortcut: `pid`/`pid run` still exists as the fast, unsupervised
-single-branch executor and as the internal workflow engine. It is not a separate
-product path; agent and orchestrator are modes of the same `pid` executable.
+Direct workflow shortcut: `pid run` still exists as the fast, unsupervised
+single-branch executor and as the internal workflow engine. It is an advanced
+escape hatch; `pid` without a subcommand now points users to agent or
+orchestrator mode.
 
 ```sh
 pid run feature/add-docs "add project documentation"
@@ -125,7 +126,8 @@ pid sessions
 
 ```sh
 pid
-pid [OPTIONS] [ATTEMPTS] [THINKING] BRANCH PROMPT...
+pid [OPTIONS] agent|a [start] --branch BRANCH --prompt TEXT [--attempts N]
+pid [OPTIONS] orchestrator|o [start] --goal TEXT [--plan-file plan.json]
 pid [OPTIONS] run [ATTEMPTS] [THINKING] BRANCH PROMPT...
 pid [OPTIONS] session [ATTEMPTS] [THINKING] BRANCH [PROMPT...]
 pid agent [start] --branch BRANCH --prompt TEXT [--attempts N] [--thinking LEVEL]
@@ -168,7 +170,7 @@ pid --version
 | `pid agent follow-up RUN_ID` | Queue a durable follow-up for a supervised run. Valid types are `clarify`, `scope_change`, `pause`, and `abort`. Running children apply it at the next safe checkpoint. |
 | `pid agent status RUN_ID` | Show current step, status, PR URL, failure, and follow-up counts for a run. |
 | `pid agent runs` | List recent supervised runs. |
-| `pid orchestrator`, `pid orchestrator start` | Create a larger-run coordinator. In a TTY, missing startup options and no-plan intake answers are prompted. Without `--plan-file` in non-interactive mode, prints intake questions; with a plan, creates child runs and launches ready children. |
+| `pid orchestrator`, `pid orchestrator start`, `pid o` | Create a larger-run coordinator. In a TTY, missing startup options and no-plan intake answers are prompted. Without `--plan-file` in non-interactive mode, prints intake questions; with a plan, creates child runs and launches ready children. |
 | `pid orchestrator follow-up RUN_ID` | Record a global follow-up or route it to child run inboxes with `--target` or `--all`. Uses the same follow-up types as `pid agent follow-up`. |
 | `pid orchestrator status RUN_ID` | Show orchestrator status and child run IDs/statuses. |
 | `pid orchestrator runs` | List recent orchestrator runs. |
@@ -238,8 +240,8 @@ Most workflow behavior is configurable. Important sections include:
 - `[agent]`: agent command, interactive/non-interactive args, thinking levels,
   review thinking, and display label.
 - `[runtime]`: runtime behavior such as macOS screen-awake support.
-- `[orchestrator]`: enable/disable `pid agent` and optionally set a custom
-  run-state directory.
+- `[orchestrator]`: enable/disable `pid agent`, optionally set a custom
+  run-state directory, and configure default parallelism/validation commands.
 - `[commit]`: title verifier and automated feedback commit titles.
 - `[forge]`: forge command, PR create/edit/check/merge templates, merge
   confirmation, and check polling behavior.
@@ -260,6 +262,8 @@ Disable supervised agent mode, or move run state to an absolute directory:
 [orchestrator]
 enabled = false
 store_dir = "/var/lib/pid/runs"
+max_parallel_agents = 4
+validation_commands = ["mise run check"]
 ```
 
 When `store_dir` is empty, `pid agent` writes under

@@ -20,10 +20,9 @@ def test_no_args_prints_short_usage(tmp_path: Path) -> None:
     process, _ = run_pid(tmp_path, [], commands=())
 
     assert_success(process)
-    assert (
-        process.stdout
-        == "usage: pid [session] [ATTEMPTS] [THINKING] BRANCH [PROMPT...]\n"
-    )
+    assert "What do you want pid to do?" in process.stdout
+    assert "pid agent" in process.stdout
+    assert "pid orchestrator" in process.stdout
 
 
 @pytest.mark.parametrize("args", [["--help"], ["-h"]])
@@ -32,7 +31,7 @@ def test_help_uses_typer_output(tmp_path: Path, args: list[str]) -> None:
 
     assert_success(process)
     assert "Run pid." in process.stdout
-    assert "[session] [ATTEMPTS] [THINKING] BRANCH" in process.stdout
+    assert "COMMAND [ARGS...]" in process.stdout
 
 
 @pytest.mark.parametrize(
@@ -52,10 +51,7 @@ def test_argument_validation_errors(
 
     assert process.returncode == 2
     assert message in process.stderr
-    assert (
-        "usage: pid [session] [ATTEMPTS] [THINKING] BRANCH [PROMPT...]"
-        in process.stderr
-    )
+    assert "usage: pid run [ATTEMPTS] [THINKING] BRANCH PROMPT..." in process.stderr
 
 
 def test_invalid_branch_name_stops_before_repo_setup(tmp_path: Path) -> None:
@@ -156,9 +152,8 @@ def test_keep_screen_awake_does_not_start_for_usage_only(
     process, _ = run_pid(tmp_path, ["--config", str(config_path)], commands=())
 
     assert_success(process)
-    assert process.stdout == (
-        "usage: pid [session] [ATTEMPTS] [THINKING] BRANCH [PROMPT...]\n"
-    )
+    assert "What do you want pid to do?" in process.stdout
+    assert "pid agent" in process.stdout
     assert process.stderr == ""
 
 

@@ -572,6 +572,47 @@ class CliProcess:
     stderr: str
 
 
+def _args_for_workflow_tests(args: list[str]) -> list[str]:
+    """Keep workflow tests focused on the advanced `pid run` engine path."""
+
+    if not args:
+        return args
+    commands = {
+        "agent",
+        "a",
+        "orchestrator",
+        "o",
+        "run",
+        "session",
+        "init",
+        "sessions",
+        "config",
+        "x",
+        "version",
+        "--help",
+        "-h",
+        "--version",
+        "-v",
+    }
+    options_with_values = {"--config", "-c", "--output"}
+    index = 0
+    while index < len(args):
+        value = args[index]
+        if value in options_with_values:
+            index += 2
+            continue
+        if value.startswith("--config=") or value.startswith("--output="):
+            index += 1
+            continue
+        if value.startswith("-"):
+            index += 1
+            continue
+        if value in commands:
+            return args
+        return [*args[:index], "run", *args[index:]]
+    return args
+
+
 def run_pid(
     tmp_path: Path,
     args: list[str],
@@ -619,7 +660,7 @@ def run_pid(
     previous_cwd = os.getcwd()
     try:
         os.chdir(state["repo_root"])
-        result = runner.invoke(app, args, env=env)
+        result = runner.invoke(app, _args_for_workflow_tests(args), env=env)
     finally:
         os.chdir(previous_cwd)
 

@@ -9,7 +9,7 @@ from pid.errors import abort
 from pid.models import ParsedArgs
 from pid.output import echo_err, echo_out
 
-USAGE = "usage: pid [session] [ATTEMPTS] [THINKING] BRANCH [PROMPT...]"
+USAGE = "usage: pid run [ATTEMPTS] [THINKING] BRANCH PROMPT..."
 SESSION_USAGE = "usage: pid session [ATTEMPTS] [THINKING] BRANCH [PROMPT...]"
 THINKING_LEVELS = DEFAULT_THINKING_LEVELS
 

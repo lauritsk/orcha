@@ -591,7 +591,7 @@ def test_resolve_orchestrator_start_args_preserves_start_options(
         "--goal",
         "Ship larger change",
         "--branch-prefix",
-        "work",
+        "ship-larger-change",
         "--concurrency",
         "4",
         "--plan-file",
@@ -689,7 +689,7 @@ def test_main_resolves_interactive_args_when_stdin_is_tty(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class FakeContext:
-        args = ["prompt"]
+        args = ["feature/x", "prompt"]
 
     class FakeStdin:
         def isatty(self) -> bool:
@@ -717,7 +717,7 @@ def test_main_resolves_interactive_args_when_stdin_is_tty(
     monkeypatch.setattr(cli_module, "run_pid", fake_run_pid)
 
     with pytest.raises(typer.Exit) as exc_info:
-        cli_module.main(cast(Any, FakeContext()), args=["feature/x"], config=None)
+        cli_module.main(cast(Any, FakeContext()), args=["run"], config=None)
 
     assert exc_info.value.exit_code == 7
     assert calls == [

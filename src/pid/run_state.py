@@ -193,6 +193,7 @@ class RunStore:
         status: str = "awaiting_plan",
         branch_prefix: str = "work",
         concurrency: int = 4,
+        validation_commands: list[str] | None = None,
     ) -> dict[str, Any]:
         """Create and persist an orchestrator run state."""
 
@@ -207,6 +208,7 @@ class RunStore:
             "goal": goal,
             "branch_prefix": branch_prefix,
             "concurrency": concurrency,
+            "validation_commands": validation_commands or [],
             "intake_questions": questions,
             "approved_plan": plan,
             "children": children or [],

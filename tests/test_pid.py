@@ -15,10 +15,10 @@ def test_app_prints_short_usage_by_default() -> None:
     result = runner.invoke(app)
 
     assert result.exit_code == 0
-    assert (
-        result.output
-        == "usage: pid [session] [ATTEMPTS] [THINKING] BRANCH [PROMPT...]\n"
-    )
+    assert "What do you want pid to do?" in result.output
+    assert "pid agent" in result.output
+    assert "pid orchestrator" in result.output
+    assert "pid run <branch> <prompt>" in result.output
 
 
 def test_app_shows_typer_help() -> None:
@@ -27,8 +27,12 @@ def test_app_shows_typer_help() -> None:
 
     assert result.exit_code == 0
     assert "Run pid. Use `pid init` to create the default config." in output
-    assert "[session] [ATTEMPTS] [THINKING] BRANCH" in output
+    assert "COMMAND [ARGS...]" in output
     assert "--config" in output
+    assert "pid agent|a" in output
+    assert "follow-up|status|runs" in output
+    assert "pid orchestrator|o" in output
+    assert "pid run BRANCH PROMPT" in output
     assert "pid sessions [--all|-a]" in output
     assert "pid config show|default|path" in output
     assert "--output" in output

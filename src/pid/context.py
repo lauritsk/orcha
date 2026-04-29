@@ -10,7 +10,7 @@ from pid.commands import CommandRunner
 from pid.config import PIDConfig
 from pid.events import EventSink, NullEventSink, WorkflowEvent
 from pid.extensions import ExtensionRegistry
-from pid.github import Forge
+from pid.forge import Forge
 from pid.keepawake import KeepAwake
 from pid.models import CommandResult, CommitMessage, OutputMode, ParsedArgs
 from pid.repository import Repository

@@ -192,6 +192,18 @@ def test_forge_command_and_args_are_configurable(tmp_path: Path) -> None:
     assert config.forge.checks_pending_exit_codes == (2, 3)
 
 
+def test_legacy_trust_mise_maps_to_setup_command(tmp_path: Path) -> None:
+    enabled = parse_config(
+        {"workflow": {"trust_mise": True}}, tmp_path / "enabled.toml"
+    )
+    disabled = parse_config(
+        {"workflow": {"trust_mise": False}}, tmp_path / "disabled.toml"
+    )
+
+    assert enabled.workflow.setup_command == ("mise", "trust", ".")
+    assert disabled.workflow.setup_command == ()
+
+
 def test_prompts_workflow_and_commit_config_are_configurable(tmp_path: Path) -> None:
     config = parse_config(
         {
@@ -213,7 +225,7 @@ def test_prompts_workflow_and_commit_config_are_configurable(tmp_path: Path) -> 
                 "merge_confirmation_timeout_seconds": 7,
                 "merge_confirmation_poll_interval_seconds": 2,
                 "merge_retry_limit": 2,
-                "trust_mise": False,
+                "setup_command": [],
                 "base_refresh_enabled": False,
                 "base_refresh_stages": ["before_message", "before_pr", "after_checks"],
                 "base_refresh_limit": 4,
@@ -230,7 +242,7 @@ def test_prompts_workflow_and_commit_config_are_configurable(tmp_path: Path) -> 
     assert config.workflow.checks_timeout_seconds == 5
     assert config.workflow.merge_confirmation_timeout_seconds == 7
     assert config.workflow.merge_confirmation_poll_interval_seconds == 2
-    assert config.workflow.trust_mise is False
+    assert config.workflow.setup_command == ()
     assert config.workflow.base_refresh_enabled is False
     assert config.workflow.base_refresh_stages == (
         "before_message",
@@ -283,7 +295,14 @@ def test_invalid_agent_config_is_rejected(
             },
             "pr_head_oid_args must not be empty",
         ),
-        ({"workflow": {"trust_mise": "no"}}, "workflow.trust_mise must be a boolean"),
+        (
+            {"workflow": {"trust_mise": "no"}},
+            "workflow.trust_mise must be a boolean",
+        ),
+        (
+            {"workflow": {"setup_command": [""]}},
+            "workflow.setup_command executable must not be empty",
+        ),
         (
             {"workflow": {"base_refresh_stages": ["during_lunch"]}},
             "unsupported stage: during_lunch",

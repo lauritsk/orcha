@@ -92,5 +92,5 @@ def test_session_log_captures_agent_steps_commands_and_outputs(tmp_path: Path) -
     assert "STEP START: agent message" in log
     assert "$ cog verify 'feat: cool stuff'" in log
     assert "cog verified" in log
-    assert "github squash merged: feat: cool stuff" in log
+    assert "forge squash merged: feat: cool stuff" in log
     assert "exit code: 0" in log

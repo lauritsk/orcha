@@ -22,7 +22,7 @@ from pid.config import OrchestratorConfig, PIDConfig, parse_config
 from pid.context import WorkflowContext
 from pid.events import ListEventSink, WorkflowEvent
 from pid.extensions import ExtensionError
-from pid.github import Forge
+from pid.forge import Forge
 from pid.failures import FailureKind, WorkflowFailure, failure_from_abort
 from pid.models import CommandResult, OutputMode
 from pid.orchestrator import (

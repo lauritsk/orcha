@@ -339,7 +339,9 @@ def test_worktree_config_failure_cleans_up(tmp_path: Path) -> None:
     ]
 
 
-def test_mise_trust_failure_stops_after_worktree_creation(tmp_path: Path) -> None:
+def test_default_setup_command_failure_stops_after_worktree_creation(
+    tmp_path: Path,
+) -> None:
     state = base_state(tmp_path, mise_trust_fail=True)
 
     process, final_state = run_pid(
@@ -352,7 +354,9 @@ def test_mise_trust_failure_stops_after_worktree_creation(tmp_path: Path) -> Non
     assert not calls(final_state, "pi")
 
 
-def test_mise_is_optional_when_not_on_path(tmp_path: Path) -> None:
+def test_default_setup_command_is_optional_when_mise_not_on_path(
+    tmp_path: Path,
+) -> None:
     state = base_state(tmp_path, worktree_dirty="", worktree_diff="")
 
     process, final_state = run_pid(
@@ -365,6 +369,54 @@ def test_mise_is_optional_when_not_on_path(tmp_path: Path) -> None:
     assert_success(process)
     assert "no changes or commits after agent" in process.stdout
     assert not calls(final_state, "mise")
+
+
+def test_configured_setup_command_runs_after_worktree_creation(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        """
+[workflow]
+setup_command = ["custom-setup", "--trust"]
+""".strip()
+    )
+    state = base_state(tmp_path, custom_setup_fail=True)
+
+    process, final_state = run_pid(
+        tmp_path,
+        ["--config", str(config_path), "feature/cool-stuff", "prompt"],
+        state=state,
+        commands=("git", "cog", "pi", "gh", "custom-setup"),
+    )
+
+    assert process.returncode == 1
+    assert "custom setup failed" in process.stderr
+    assert final_state["custom_setup_args"] == ["--trust"]
+    assert calls(final_state, "custom-setup", "--trust")
+    assert not calls(final_state, "pi")
+
+
+def test_configured_missing_setup_command_is_reported(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        """
+[workflow]
+setup_command = ["custom-setup", "--trust"]
+""".strip()
+    )
+    state = base_state(tmp_path)
+
+    process, final_state = run_pid(
+        tmp_path,
+        ["--config", str(config_path), "feature/cool-stuff", "prompt"],
+        state=state,
+        commands=("git", "cog", "pi", "gh"),
+    )
+
+    assert process.returncode == 127
+    assert "command not found: custom-setup" in process.stderr
+    assert not calls(final_state, "pi")
 
 
 def test_initial_pi_failure_stops_before_review(tmp_path: Path) -> None:
@@ -420,7 +472,7 @@ def test_structured_output_shows_run_summary_and_phase_headers(
     assert "attempts 2" in process.stdout
     assert "thinking high" in process.stdout
     assert "non-interactive agent" in process.stdout
-    assert "forge    github" in process.stdout
+    assert "forge    forge" in process.stdout
     assert "output   normal" in process.stdout
     assert "Prepare" in process.stdout
     assert "validate repo, branch, tools" in process.stdout
@@ -648,7 +700,7 @@ def test_dirty_work_is_committed_then_pr_created_and_merged(tmp_path: Path) -> N
     assert "pid: created worktree" in process.stdout
     assert "pid: PR attempt 1/2" in process.stdout
     assert "pid commit message" in process.stdout
-    assert "pid github squash merged" in process.stdout
+    assert "pid forge squash merged" in process.stdout
     assert final_state["commit_messages"] == ["feat: implement cool stuff"]
     assert final_state["commit_bodies"] == [
         "- Implements the requested cool stuff.\n- Updates tests and docs as needed."
@@ -810,14 +862,14 @@ verifier_args = []
     assert not calls(final_state, "cog")
 
 
-def test_workflow_config_controls_checks_and_mise_trust(tmp_path: Path) -> None:
+def test_workflow_config_controls_checks_and_setup_command(tmp_path: Path) -> None:
     config_path = tmp_path / "config.toml"
     config_path.write_text(
         """
 [workflow]
 checks_timeout_seconds = 0
 checks_poll_interval_seconds = 0
-trust_mise = false
+setup_command = []
 """.strip()
     )
     state = base_state(
@@ -857,7 +909,7 @@ base_refresh_enabled = false
     )
 
     assert process.returncode == 9
-    assert "github squash merge failed after 0 merge retries" in process.stderr
+    assert "forge squash merge failed after 0 merge retries" in process.stderr
     assert not calls(final_state, "git", "fetch")
 
 
@@ -935,7 +987,7 @@ diagnostic_output_limit = 7
     rebase_call = next(
         call for call in final_state["pi_calls"] if call["kind"] == "rebase_fix"
     )
-    assert rebase_call["prompt"] == "CUSTOM REBASE forge=github branch=main out=conflic"
+    assert rebase_call["prompt"] == "CUSTOM REBASE forge=forge branch=main out=conflic"
 
 
 def test_prompt_preserves_unknown_option_like_words(tmp_path: Path) -> None:
@@ -1476,7 +1528,7 @@ def test_merge_failure_but_forge_reports_merged_cleans_up(tmp_path: Path) -> Non
 
     assert_success(process)
     assert (
-        "github reports PR merged despite local forge cleanup failure" in process.stdout
+        "forge reports PR merged despite local forge cleanup failure" in process.stdout
     )
     assert ["worktree", "remove", "--force", final_state["worktree_path"]] in [
         call["args"][-4:] for call in calls(final_state, "git")
@@ -1555,7 +1607,7 @@ def test_merge_failure_after_retry_limit_leaves_pr_open(tmp_path: Path) -> None:
     process, _ = run_pid(tmp_path, ["1", "feature/cool-stuff", "prompt"], state=state)
 
     assert process.returncode == 9
-    assert "github squash merge failed after 1 merge retries" in process.stderr
+    assert "forge squash merge failed after 1 merge retries" in process.stderr
 
 
 def test_cleanup_worktree_remove_failure_is_reported(tmp_path: Path) -> None:

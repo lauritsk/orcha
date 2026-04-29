@@ -16,7 +16,7 @@ class FailureKind(StrEnum):
     MISSING_COMMAND = "missing_command"
     DIRTY_MAIN_WORKTREE = "dirty_main_worktree"
     WORKTREE_EXISTS = "worktree_exists"
-    MISE_TRUST_FAILED = "mise_trust_failed"
+    SETUP_COMMAND_FAILED = "setup_command_failed"
     INITIAL_AGENT_FAILED = "initial_agent_failed"
     REVIEW_AGENT_FAILED = "review_agent_failed"
     NO_CHANGES = "no_changes"
@@ -78,7 +78,11 @@ _STEP_FAILURES: dict[str, tuple[FailureKind, str, bool]] = {
         "worktree or branch exists",
         False,
     ),
-    "trust_mise": (FailureKind.MISE_TRUST_FAILED, "mise trust failed", False),
+    "run_setup_command": (
+        FailureKind.SETUP_COMMAND_FAILED,
+        "setup command failed",
+        False,
+    ),
     "run_initial_agent": (
         FailureKind.INITIAL_AGENT_FAILED,
         "initial agent failed",

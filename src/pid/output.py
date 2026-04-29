@@ -141,9 +141,7 @@ def print_commit_message(message: CommitMessage) -> None:
     )
 
 
-def print_merge_success(
-    pr_title: str, pr_url: str, forge_label: str = "github"
-) -> None:
+def print_merge_success(pr_title: str, pr_url: str, forge_label: str = "forge") -> None:
     """Print the successful merge summary panel."""
 
     if _CURRENT_LOGGER is not None:

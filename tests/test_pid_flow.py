@@ -623,6 +623,9 @@ def test_review_prompt_targets_commits_dirty_or_empty_work(
     assert "Ensure all relevant documentation was updated" in review_call["prompt"]
     assert "update them yourself instead of merely rejecting" in review_call["prompt"]
     assert "Original request: original request" in review_call["prompt"]
+    assert "base123..HEAD" not in process.stdout
+    if overrides["commit_count"] > 0:
+        assert f"review {overrides['commit_count']} commits" in process.stdout
 
 
 def test_no_changes_after_review_stops_before_pr(tmp_path: Path) -> None:

@@ -31,7 +31,7 @@ from pid.output import (
 from pid.parsing import bump_thinking, parse_args
 from pid.repository import Repository
 from pid.session_logging import CommandLogHandle, SessionLogger
-from pid.utils import env_int, has_output, worktree_path_for
+from pid.utils import env_int, has_output, review_display_target_for, worktree_path_for
 from pid.workflow import PIDFlow
 
 
@@ -564,6 +564,22 @@ def test_bump_thinking_boundaries(
     level: str, levels: tuple[str, ...], expected: str
 ) -> None:
     assert bump_thinking(level, levels) == expected
+
+
+@pytest.mark.parametrize(
+    ("commit_count", "dirty", "expected"),
+    [
+        (2, False, "review 2 commits"),
+        (1, False, "review 1 commit"),
+        (2, True, "review 2 commits and uncommitted changes"),
+        (0, True, "review uncommitted changes"),
+        (0, False, "verify requested work is complete"),
+    ],
+)
+def test_review_display_target_for_user_facing_scope(
+    commit_count: int, dirty: bool, expected: str
+) -> None:
+    assert review_display_target_for(commit_count, dirty) == expected
 
 
 def test_utils_env_int_and_path_helpers(

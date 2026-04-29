@@ -32,6 +32,26 @@ def worktree_path_for(repo_root: str, branch: str) -> str:
     return str(repo_path.parent / f"{repo_path.name}-{safe_branch}")
 
 
+def pluralize(value: int, singular: str, plural: str | None = None) -> str:
+    """Return a count with a singular or plural noun."""
+
+    noun = singular if value == 1 else (plural or f"{singular}s")
+    return f"{value} {noun}"
+
+
+def review_display_target_for(commit_count: int, dirty: bool) -> str:
+    """Describe review scope for user-facing UI."""
+
+    commit_text = pluralize(commit_count, "commit")
+    if commit_count > 0 and dirty:
+        return f"review {commit_text} and uncommitted changes"
+    if commit_count > 0:
+        return f"review {commit_text}"
+    if dirty:
+        return "review uncommitted changes"
+    return "verify requested work is complete"
+
+
 def review_target_for(base_rev: str, commit_count: int, dirty: bool) -> str:
     """Describe what the review agent pass should inspect."""
 

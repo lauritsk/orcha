@@ -80,7 +80,7 @@ def test_session_log_captures_agent_steps_commands_and_outputs(tmp_path: Path) -
     )
     assert "phase: Prepare - validate repo, branch, tools" in log
     assert "phase: Agent - create initial changes" in log
-    assert "phase: Review - Review the uncommitted changes in this worktree." in log
+    assert "phase: Review - review uncommitted changes" in log
     assert "phase: Message + commit - generate metadata and create commit" in log
     assert "phase: PR attempt 1/3" in log
     assert "STEP START: agent initial" in log

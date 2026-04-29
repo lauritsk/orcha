@@ -47,7 +47,13 @@ from pid.prompts import (
 )
 from pid.repository import Repository, validate_branch_name
 from pid.session_logging import SessionLogger
-from pid.utils import env_int, has_output, review_target_for, worktree_path_for
+from pid.utils import (
+    env_int,
+    has_output,
+    review_display_target_for,
+    review_target_for,
+    worktree_path_for,
+)
 
 REFRESH_STOP_RESULTS = {"limit_reached", "conflict_unresolved"}
 REFRESH_REBASE_RESULTS = {"rebased_cleanly", "rebased_with_agent_fix"}
@@ -423,7 +429,11 @@ class PIDFlow:
             ctx.initial_commit_count,
             has_output(ctx.initial_dirty),
         )
-        print_phase("Review", review_target.replace("_", " "))
+        review_display_target = review_display_target_for(
+            ctx.initial_commit_count,
+            has_output(ctx.initial_dirty),
+        )
+        print_phase("Review", review_display_target)
         review_prompt = build_review_prompt(
             original_prompt=parsed.prompt,
             review_target=review_target,

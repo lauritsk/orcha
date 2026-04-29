@@ -128,9 +128,26 @@ class _InteractiveDisplay:
         click.echo(rendered, nl=False, color=True)
         if error and not self._can_update:
             click.echo(error, err=True)
-        self._line_count = (
-            len(rendered.splitlines()) + 1
-        )  # include next click.prompt/click.confirm line
+        self._line_count = len(rendered.splitlines())
+
+    def record_prompt_result(
+        self,
+        message: str,
+        value: str,
+        *,
+        default: str | None = None,
+        show_default: bool = False,
+    ) -> None:
+        """Account for the click prompt line before the next in-place render."""
+
+        if not self._can_update:
+            return
+        prompt_line = message
+        if show_default and default is not None:
+            prompt_line = f"{prompt_line} [{default}]"
+        prompt_line = f"{prompt_line}: {value}"
+        width = max(1, self._console.width)
+        self._line_count += max(1, (len(prompt_line) - 1) // width + 1)
 
     def _render(self, values: dict[str, str], *, error: str | None) -> str:
         with self._console.capture() as capture:
@@ -186,9 +203,9 @@ def _prompt_attempts(
     error: str | None = None
     while True:
         display.render(values, error=error)
-        value = click.prompt(
-            "Attempts (positive integer)", default=default, show_default=True
-        )
+        message = "Attempts (positive integer)"
+        value = click.prompt(message, default=default, show_default=True)
+        display.record_prompt_result(message, value, default=default, show_default=True)
         if re.fullmatch(r"[1-9][0-9]*", value):
             return value
         error = "Enter a positive integer, e.g. 3."
@@ -205,9 +222,9 @@ def _prompt_thinking(
     error: str | None = None
     while True:
         display.render(values, error=error)
-        value = click.prompt(
-            f"Thinking level ({levels})", default=default, show_default=True
-        )
+        message = f"Thinking level ({levels})"
+        value = click.prompt(message, default=default, show_default=True)
+        display.record_prompt_result(message, value, default=default, show_default=True)
         if value in thinking_levels:
             return value
         error = f"Choose one of: {levels}."
@@ -219,9 +236,9 @@ def _prompt_required(
     error: str | None = None
     while True:
         display.render(values, error=error)
-        value = click.prompt(
-            f"{label} (example: {example})", default="", show_default=False
-        )
+        message = f"{label} (example: {example})"
+        value = click.prompt(message, default="", show_default=False)
+        display.record_prompt_result(message, value)
         if value.strip():
             return value.strip()
         error = f"{label} is required. Example: {example}"

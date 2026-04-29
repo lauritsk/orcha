@@ -355,7 +355,7 @@ def test_interactive_display_clears_previous_tty_render(
     display.render({**values, "branch": "feature/x"})
 
     output = capsys.readouterr().out
-    assert "\033[7A" in output
+    assert "\033[6A" in output
     assert "\033[2K\r" in output
 
 
@@ -378,7 +378,37 @@ def test_interactive_display_clears_validation_error_tty_render(
     display.render(values)
 
     output = capsys.readouterr().out
-    assert output.startswith("\033[8A")
+    assert output.startswith("\033[7A")
+
+
+def test_interactive_display_clears_wrapped_prompt_input(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "pid.interactive.click.get_text_stream", lambda _name: TTYStream()
+    )
+    monkeypatch.setattr(
+        "pid.interactive.shutil.get_terminal_size",
+        lambda _fallback: os.terminal_size((40, 24)),
+    )
+    display = interactive_module._InteractiveDisplay()
+    values = {
+        "attempts": "3",
+        "thinking": "medium",
+        "branch": "feature/x",
+        "prompt": "(unset)",
+    }
+
+    display.render(values)
+    display.record_prompt_result(
+        "Prompt (example: Add OAuth login and tests)",
+        "please implement the orchestrator agent plan for this project",
+    )
+    capsys.readouterr()
+    display.render(values)
+
+    output = capsys.readouterr().out
+    assert output.startswith("\033[9A")
 
 
 def test_resolve_interactive_args_prompts_all_values_when_empty(

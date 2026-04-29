@@ -2,6 +2,18 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## [v0.10.0](https://github.com/lauritsk/pid/compare/620dc4a2a46ea7c016624d1b4f8aa4b5db7e4c49..v0.10.0) - 2026-04-29
+#### Features
+- (**orchestrator**) route child follow-ups (#49) - ([34cf9aa](https://github.com/lauritsk/pid/commit/34cf9aa98f1e929f9a4f79aa66d0740f8760d1fc)) - Karl Hans Laurits
+#### Bug Fixes
+- (**interactive**) clear wrapped prompt input rows - ([4e5c773](https://github.com/lauritsk/pid/commit/4e5c773efae4205b2cdbea70953cd37914a7b4e3)) - Karl Hans Laurits
+- (**ui**) polish workflow status labels - ([4d97e79](https://github.com/lauritsk/pid/commit/4d97e79d8ecd52acb13418f64dfa73e0ed0ae2e2)) - Karl Hans Laurits
+- (**ui**) simplify review phase target - ([3778da8](https://github.com/lauritsk/pid/commit/3778da8a1011de9761c1e45fdba75590cf6473df)) - Karl Hans Laurits
+#### Continuous Integration
+- (**release**) authenticate registries with oras - ([620dc4a](https://github.com/lauritsk/pid/commit/620dc4a2a46ea7c016624d1b4f8aa4b5db7e4c49)) - Karl Hans Laurits
+
+- - -
+
 ## [v0.9.0](https://github.com/lauritsk/pid/compare/5998b6edd39d20c94039db71a17c3e3d8642a0d7..v0.9.0) - 2026-04-29
 #### Features
 - expose PR loop extension points - ([442f96f](https://github.com/lauritsk/pid/commit/442f96f38bacaa3139969fb7dcdf699c96473cc5)) - Karl Hans Laurits

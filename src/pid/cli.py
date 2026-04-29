@@ -67,7 +67,7 @@ AGENT_USAGE = (
 ORCHESTRATOR_USAGE = (
     "usage: pid orchestrator|o [start] --goal TEXT [--plan-file plan.json] "
     "[--branch-prefix PREFIX] [--concurrency N]\n"
-    "       pid orchestrator follow-up|status|runs ..."
+    "       pid orchestrator reconcile|follow-up|status|runs ..."
 )
 
 app = typer.Typer(add_completion=False, context_settings=APP_CONTEXT)
@@ -582,6 +582,20 @@ def _run_orchestrator_command(
             return 1
         typer.echo(_orchestrator_status(state, store), nl=False)
         return 0
+    if command == "reconcile":
+        if len(raw_args) != 2:
+            echo_err("usage: pid orchestrator reconcile RUN_ID")
+            return 2
+        try:
+            supervisor = OrchestratorSupervisor(
+                config=config, store=store, output_mode=output_mode
+            )
+            result = supervisor.reconcile(raw_args[1], config_path=config_path)
+        except (OSError, ValueError) as error:
+            echo_err(f"pid: could not reconcile orchestrator run: {error}")
+            return 2
+        echo_out(f"pid: orchestrator run {result.run_id}: {result.state['status']}")
+        return result.exit_code
     if command == "follow-up":
         try:
             options = _parse_orchestrator_follow_up(raw_args[1:])

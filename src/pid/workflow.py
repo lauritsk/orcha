@@ -11,6 +11,7 @@ from pathlib import Path
 from pid.commands import CommandRunner, require_command
 from pid.config import DEFAULT_SETUP_COMMAND, PIDConfig
 from pid.context import PRLoopState, WorkflowContext
+from pid.engine import WorkflowEngine
 from pid.errors import PIDAbort, abort
 from pid.events import EventSink, NullEventSink
 from pid.extensions import (
@@ -59,6 +60,7 @@ from pid.utils import (
     workflow_step_label,
     worktree_path_for,
 )
+from pid.workflow_steps import BOOTSTRAP_STEP_IDS, DEFAULT_STEP_IDS, PR_LOOP_STEP_IDS
 
 REFRESH_STOP_RESULTS = {"limit_reached", "conflict_unresolved"}
 REFRESH_REBASE_RESULTS = {"rebased_cleanly", "rebased_with_agent_fix"}
@@ -103,6 +105,7 @@ class PIDFlow:
         self.current_step = ""
         self.run_store = run_store
         self.run_id = run_id
+        self.engine = WorkflowEngine(run_store, run_id)
 
     def run(self, argv: list[str]) -> int:
         exit_code = 0
@@ -205,75 +208,33 @@ class PIDFlow:
     def bootstrap_steps(self) -> list[WorkflowStep]:
         """Return fixed pre-extension steps needed to find project extensions."""
 
-        return [
-            WorkflowStep("parse_args", self.step_parse_args),
-            WorkflowStep("start_session_logging", self.step_start_session_logging),
-            WorkflowStep("start_keep_awake", self.step_start_keep_awake),
-            WorkflowStep("render_run_summary", self.step_render_run_summary),
-            WorkflowStep("validate_branch", self.step_validate_branch),
-            WorkflowStep("resolve_repo_root", self.step_resolve_repo_root),
-        ]
+        return self._steps_from_ids(BOOTSTRAP_STEP_IDS)
 
     def default_steps(self) -> list[WorkflowStep]:
         """Return extension-aware steps after repository resolution."""
 
-        return [
-            WorkflowStep("require_commands", self.step_require_commands),
-            WorkflowStep("resolve_main_worktree", self.step_resolve_main_worktree),
-            WorkflowStep(
-                "validate_clean_main_worktree",
-                self.step_validate_clean_main_worktree,
-            ),
-            WorkflowStep("resolve_default_branch", self.step_resolve_default_branch),
-            WorkflowStep("update_default_branch", self.step_update_default_branch),
-            WorkflowStep("capture_base_rev", self.step_capture_base_rev),
-            WorkflowStep("create_worktree", self.step_create_worktree),
-            WorkflowStep("run_setup_command", self.step_run_setup_command),
-            WorkflowStep("run_initial_agent", self.step_run_initial_agent),
-            WorkflowStep("inspect_initial_changes", self.step_inspect_initial_changes),
-            WorkflowStep("run_review_agent", self.step_run_review_agent),
-            WorkflowStep("inspect_review_changes", self.step_inspect_review_changes),
-            WorkflowStep("stop_if_no_changes", self.step_stop_if_no_changes),
-            WorkflowStep("generate_message", self.step_generate_message),
-            WorkflowStep("verify_commit_title", self.step_verify_commit_title),
-            WorkflowStep("commit_changes", self.step_commit_changes),
-            WorkflowStep("run_pr_loop", self.step_run_pr_loop),
-        ]
+        return self._steps_from_ids(DEFAULT_STEP_IDS)
 
     def default_pr_loop_steps(self) -> list[WorkflowStep]:
         """Return extension-aware PR-loop substeps."""
 
-        return [
-            WorkflowStep("pr_prepare_attempt", self.step_pr_prepare_attempt),
-            WorkflowStep(
-                "pr_refresh_base_before_message",
-                self.step_pr_refresh_base_before_message,
-            ),
-            WorkflowStep("pr_regenerate_message", self.step_pr_regenerate_message),
-            WorkflowStep(
-                "pr_refresh_base_before_pr", self.step_pr_refresh_base_before_pr
-            ),
-            WorkflowStep("pr_push_branch", self.step_pr_push_branch),
-            WorkflowStep("pr_ensure_pr", self.step_pr_ensure_pr),
-            WorkflowStep("pr_wait_for_checks", self.step_pr_wait_for_checks),
-            WorkflowStep("pr_handle_checks", self.step_pr_handle_checks),
-            WorkflowStep(
-                "pr_refresh_base_after_checks",
-                self.step_pr_refresh_base_after_checks,
-            ),
-            WorkflowStep("pr_squash_merge", self.step_pr_squash_merge),
-            WorkflowStep("pr_recover_merge", self.step_pr_recover_merge),
-            WorkflowStep("pr_confirm_merge", self.step_pr_confirm_merge),
-            WorkflowStep("pr_cleanup", self.step_pr_cleanup),
-        ]
+        return self._steps_from_ids(PR_LOOP_STEP_IDS)
 
     def pr_loop_step_names(self) -> tuple[str, ...]:
         """Return known PR-loop substep names for extension validation."""
 
-        return tuple(step.name for step in self.default_pr_loop_steps())
+        return PR_LOOP_STEP_IDS
+
+    def _steps_from_ids(self, step_ids: tuple[str, ...]) -> list[WorkflowStep]:
+        """Build workflow steps from stable built-in step IDs."""
+
+        return [
+            WorkflowStep(step_id, getattr(self, f"step_{step_id}"))
+            for step_id in step_ids
+        ]
 
     def run_workflow_step(self, ctx: WorkflowContext, step: WorkflowStep) -> None:
-        """Run one step with hooks, events, replacements, and bounded retry."""
+        """Run one durable step with hooks, events, replacements, and retry."""
 
         if step.name in self.registry.disabled_steps:
             return
@@ -281,13 +242,27 @@ class PIDFlow:
         retries = 0
         while True:
             self.current_step = step.name
-            self.apply_queued_followups(ctx, step.name)
-            ctx.emit("step.started", step=step.name)
-            before_result = self.registry.run_hooks(f"before.{step.name}", ctx)
-            if before_result.action == "skip":
-                ctx.emit("step.skipped", step=step.name, message=before_result.reason)
-                return
-            self.handle_step_result(before_result)
+            self.engine.start_step(step.name)
+            try:
+                self.apply_queued_followups(ctx, step.name)
+                ctx.emit("step.started", step=step.name)
+                before_result = self.registry.run_hooks(f"before.{step.name}", ctx)
+                if before_result.action == "skip":
+                    self.engine.complete_step(
+                        step.name,
+                        status="skipped",
+                        outcome=self._step_result_outcome(before_result),
+                    )
+                    ctx.emit(
+                        "step.skipped", step=step.name, message=before_result.reason
+                    )
+                    self.current_step = ""
+                    return
+                self.handle_step_result(before_result)
+            except Exception as error:
+                self.engine.fail_step(step.name, error)
+                raise
+
             try:
                 result = normalize_step_result(step.run(ctx))
             except Exception as error:
@@ -297,27 +272,52 @@ class PIDFlow:
                     level="error",
                     fields={"error": f"{type(error).__name__}: {error}"},
                 )
+                self.engine.fail_step(step.name, error)
                 error_result = self.registry.run_hooks(f"error.{step.name}", ctx)
                 if error_result.action != "continue":
                     self.handle_step_result(error_result)
                 raise
-            after_result = self.registry.run_hooks(f"after.{step.name}", ctx)
-            if after_result.action != "continue":
-                result = after_result
-            if result.action == "retry":
-                retries += 1
-                if retries > 3:
-                    echo_err(
-                        "pid: step retry limit reached: "
-                        f"{workflow_step_label(step.name)}"
+
+            try:
+                after_result = self.registry.run_hooks(f"after.{step.name}", ctx)
+                if after_result.action != "continue":
+                    result = after_result
+                if result.action == "retry":
+                    retries += 1
+                    self.engine.complete_step(
+                        step.name,
+                        status="retrying",
+                        outcome=self._step_result_outcome(result),
                     )
-                    abort(1)
-                ctx.emit("step.retrying", step=step.name, message=result.reason)
-                continue
-            self.handle_step_result(result)
-            ctx.emit("step.completed", step=step.name)
-            self.current_step = ""
-            return
+                    if retries > 3:
+                        echo_err(
+                            "pid: step retry limit reached: "
+                            f"{workflow_step_label(step.name)}"
+                        )
+                        abort(1)
+                    ctx.emit("step.retrying", step=step.name, message=result.reason)
+                    continue
+                self.handle_step_result(result)
+                self.engine.complete_step(
+                    step.name,
+                    outcome=self._step_result_outcome(result),
+                )
+                ctx.emit("step.completed", step=step.name)
+                self.current_step = ""
+                return
+            except Exception as error:
+                self.engine.fail_step(step.name, error)
+                raise
+
+    @staticmethod
+    def _step_result_outcome(result: StepResult) -> dict[str, object]:
+        """Return persisted, stable step result fields."""
+
+        return {
+            "action": result.action,
+            "code": result.code,
+            "reason": result.reason,
+        }
 
     def apply_queued_followups(self, ctx: WorkflowContext, step_name: str) -> None:
         """Apply durable run follow-ups at safe workflow checkpoints."""

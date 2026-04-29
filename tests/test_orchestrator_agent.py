@@ -21,7 +21,7 @@ from pid.commands import CommandRunner
 from pid.config import OrchestratorConfig, PIDConfig, parse_config
 from pid.context import WorkflowContext
 from pid.events import ListEventSink, WorkflowEvent
-from pid.extensions import ExtensionError
+from pid.extensions import ExtensionError, WorkflowStep
 from pid.forge import Forge
 from pid.failures import FailureKind, WorkflowFailure, failure_from_abort
 from pid.models import CommandResult, OutputMode
@@ -34,7 +34,10 @@ from pid.orchestrator import (
     build_child_prompt,
     build_child_records,
     child_agent_command,
+    launch_ready_children,
     load_plan,
+    orchestrator_children_status,
+    reconcile_child_status,
     select_followup_targets,
     select_thinking,
     string_list,
@@ -123,6 +126,7 @@ def test_agent_start_runs_workflow_and_persists_state(tmp_path: Path) -> None:
     assert state["status"] == "succeeded"
     assert state["branch"] == "feature/cool-stuff"
     assert state["pr_url"] == "https://example.invalid/pr/1"
+    assert state["workflow"]["steps"]["run_initial_agent"]["status"] == "succeeded"
     assert states[0].with_name("events.jsonl").exists()
 
 
@@ -202,6 +206,38 @@ def test_agent_start_records_typed_failure(tmp_path: Path) -> None:
     assert state["status"] == "failed"
     assert state["last_failure"]["kind"] == "initial_agent_failed"
     assert state["pending_recovery_action"]["kind"] == "abort"
+
+
+def test_workflow_engine_persists_step_start_end_and_failure(tmp_path: Path) -> None:
+    store = RunStore(tmp_path / "runs")
+    state = store.create_run(branch="feature/step", prompt="prompt", argv=[])
+    run_id = str(state["run_id"])
+    flow = PIDFlow(load_extensions=False, run_store=store, run_id=run_id)
+    assert flow.engine.durable is True
+    ctx = cast(
+        WorkflowContext,
+        SimpleNamespace(scratch={}, emit=lambda *_args, **_kwargs: None),
+    )
+
+    flow.run_workflow_step(ctx, WorkflowStep("extra_step", lambda _ctx: None))
+
+    state = store.read_state(run_id)
+    step_state = state["workflow"]["steps"]["extra_step"]
+    assert step_state["status"] == "succeeded"
+    assert step_state["outcome"]["action"] == "continue"
+    assert state["current_step"] == ""
+
+    def fail_step(_ctx: WorkflowContext) -> None:
+        raise RuntimeError("boom")
+
+    with pytest.raises(RuntimeError, match="boom"):
+        flow.run_workflow_step(ctx, WorkflowStep("bad_step", fail_step))
+
+    state = store.read_state(run_id)
+    failed = state["workflow"]["steps"]["bad_step"]
+    assert failed["status"] == "failed"
+    assert failed["error"]["type"] == "RuntimeError"
+    assert state["current_step"] == "bad_step"
 
 
 def test_run_state_helpers_cover_projection_listing_and_sink(tmp_path: Path) -> None:
@@ -812,6 +848,189 @@ def test_orchestrator_supervisor_launches_ready_children(
     assert children[2]["status"] == "blocked"
     assert launched[0][:3] == [sys.executable, "-m", "pid"]
     assert "--config" in launched[0]
+
+
+def test_launch_ready_children_helper_marks_queue_and_blocked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    launched: list[list[str]] = []
+
+    class FakeProcess:
+        def __init__(self, command: list[str], **_kwargs: object) -> None:
+            launched.append(command)
+            self.pid = 3000 + len(launched)
+
+    children = [
+        {
+            "item_id": "one",
+            "child_run_id": "20260429T010101001Z-abcdef",
+            "branch": "feat/one",
+            "prompt": "prompt",
+            "thinking": "medium",
+        },
+        {
+            "item_id": "two",
+            "child_run_id": "20260429T010101002Z-abcdef",
+            "branch": "feat/two",
+            "prompt": "prompt",
+            "thinking": "medium",
+        },
+        {
+            "item_id": "later",
+            "child_run_id": "20260429T010101003Z-abcdef",
+            "branch": "feat/later",
+            "prompt": "prompt",
+            "thinking": "medium",
+            "dependencies": ["one"],
+        },
+    ]
+    monkeypatch.setattr("pid.orchestrator.subprocess.Popen", FakeProcess)
+
+    launch_ready_children(
+        children,
+        parent_run_id="parent",
+        config_path=None,
+        default_thinking="medium",
+        concurrency=1,
+    )
+
+    assert children[0]["status"] == "launched"
+    assert children[1]["status"] == "queued"
+    assert children[2]["status"] == "blocked"
+    assert children[2]["blocked_reason"] == "waiting for dependencies"
+    assert len(launched) == 1
+
+
+def test_orchestrator_reconcile_launches_next_dependency_wave(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = RunStore(tmp_path / "runs")
+    config = PIDConfig(orchestrator=OrchestratorConfig(store_dir=str(store.root)))
+    plan_path = tmp_path / "plan.json"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "items": [
+                    {"id": "one", "title": "One"},
+                    {"id": "later", "title": "Later", "dependencies": ["one"]},
+                ]
+            }
+        )
+    )
+    launched: list[list[str]] = []
+
+    class FakeProcess:
+        def __init__(self, command: list[str], **_kwargs: object) -> None:
+            launched.append(command)
+            self.pid = 4000 + len(launched)
+
+    monkeypatch.setattr("pid.orchestrator.subprocess.Popen", FakeProcess)
+    supervisor = OrchestratorSupervisor(config=config, store=store)
+    result = supervisor.start(
+        OrchestratorStartOptions(goal="goal", plan_file=plan_path, concurrency=1)
+    )
+    first, later = result.state["children"]
+
+    assert first["status"] == "launched"
+    assert later["status"] == "blocked"
+    store.mark_succeeded(str(first["child_run_id"]), None)
+
+    reconciled = supervisor.reconcile(result.run_id)
+
+    children = reconciled.state["children"]
+    assert children[0]["status"] == "succeeded"
+    assert children[1]["status"] == "launched"
+    assert len(launched) == 2
+
+
+def test_orchestrator_reconcile_marks_failed_dependencies_blocked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = RunStore(tmp_path / "runs")
+    config = PIDConfig(orchestrator=OrchestratorConfig(store_dir=str(store.root)))
+    plan_path = tmp_path / "plan.json"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "items": [
+                    {"id": "one", "title": "One"},
+                    {"id": "later", "title": "Later", "dependencies": ["one"]},
+                ]
+            }
+        )
+    )
+
+    class FakeProcess:
+        def __init__(self, _command: list[str], **_kwargs: object) -> None:
+            self.pid = 5000
+
+    monkeypatch.setattr("pid.orchestrator.subprocess.Popen", FakeProcess)
+    supervisor = OrchestratorSupervisor(config=config, store=store)
+    result = supervisor.start(
+        OrchestratorStartOptions(goal="goal", plan_file=plan_path, concurrency=1)
+    )
+    first = result.state["children"][0]
+    failure = WorkflowFailure(
+        FailureKind.PR_FAILED,
+        "run_initial_agent",
+        1,
+        "failed",
+        False,
+    )
+    store.mark_failed(str(first["child_run_id"]), failure)
+
+    reconciled = supervisor.reconcile(result.run_id)
+
+    later = reconciled.state["children"][1]
+    assert later["status"] == "blocked"
+    assert later["blocked_reason"] == "dependency failed: one"
+
+
+def test_orchestrator_reconcile_edge_states(tmp_path: Path) -> None:
+    store = RunStore(tmp_path / "runs")
+    config = PIDConfig(orchestrator=OrchestratorConfig(store_dir=str(store.root)))
+    supervisor = OrchestratorSupervisor(config=config, store=store)
+    agent_state = store.create_run(branch="feature/x", prompt="prompt", argv=[])
+    with pytest.raises(ValueError, match="not an orchestrator"):
+        supervisor.reconcile(str(agent_state["run_id"]))
+
+    orch = store.create_orchestrator_run(goal="goal", questions=[])
+    orch["children"] = "bad"
+    store.write_state(str(orch["run_id"]), orch)
+    assert supervisor.reconcile(str(orch["run_id"])).state["status"] == "planned"
+
+    child = store.create_run(branch="feature/child", prompt="prompt", argv=[])
+    child["pr_url"] = "https://example.invalid/pr/2"
+    store.write_state(str(child["run_id"]), child)
+    child_record = {
+        "item_id": "child",
+        "child_run_id": child["run_id"],
+        "status": "planned",
+    }
+    reconcile_child_status(store, child_record)
+    assert child_record["status"] == "running"
+    assert child_record["pr_url"] == "https://example.invalid/pr/2"
+
+    launched_record = {
+        "item_id": "launched",
+        "child_run_id": child["run_id"],
+        "status": "launched",
+    }
+    child["status"] = "planned"
+    store.write_state(str(child["run_id"]), child)
+    reconcile_child_status(store, launched_record)
+    assert launched_record["status"] == "launched"
+
+    missing_record = {"child_run_id": "20260429T010101999Z-abcdef"}
+    reconcile_child_status(store, missing_record)
+    assert missing_record["blocked_reason"] == "child run state missing"
+
+    assert orchestrator_children_status([]) == "planned"
+    assert orchestrator_children_status([{"status": "no_changes"}]) == "succeeded"
+    assert orchestrator_children_status([{"status": "queued"}]) == "running"
+    assert orchestrator_children_status([{"status": "failed"}]) == "failed"
+    assert orchestrator_children_status([{"status": "blocked"}]) == "blocked"
+    assert orchestrator_children_status([{"status": "planned"}]) == "planned"
 
 
 def test_orchestrator_helper_error_paths(tmp_path: Path) -> None:

@@ -368,6 +368,103 @@ class RunStore:
                 records.append(value)
         return records
 
+    def record_step_started(self, run_id: str, step_id: str) -> dict[str, Any]:
+        """Persist durable workflow step start."""
+
+        state = self.read_state(run_id)
+        workflow, record = _workflow_record(state, step_id)
+        now = utc_now()
+        record.update(
+            {
+                "step_id": step_id,
+                "status": "running",
+                "started_at": now,
+                "finished_at": "",
+                "outcome": None,
+                "error": None,
+            }
+        )
+        workflow["current_step"] = step_id
+        workflow["last_step"] = step_id
+        workflow.setdefault("history", []).append(
+            {"step_id": step_id, "status": "started", "at": now}
+        )
+        state["current_step"] = step_id
+        if state.get("status") in {"planned", "queued", "blocked"}:
+            state["status"] = "running"
+        self.write_state(run_id, state)
+        return state
+
+    def record_step_completed(
+        self,
+        run_id: str,
+        step_id: str,
+        *,
+        status: str = "succeeded",
+        outcome: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Persist durable workflow step completion or non-failure outcome."""
+
+        state = self.read_state(run_id)
+        workflow, record = _workflow_record(state, step_id)
+        now = utc_now()
+        record.update(
+            {
+                "step_id": step_id,
+                "status": status,
+                "finished_at": now,
+                "outcome": redact(outcome or {}),
+                "error": None,
+            }
+        )
+        if not record.get("started_at"):
+            record["started_at"] = now
+        workflow["last_step"] = step_id
+        workflow["last_outcome"] = {
+            "step_id": step_id,
+            "status": status,
+            **(outcome or {}),
+        }
+        workflow.setdefault("history", []).append(
+            {"step_id": step_id, "status": status, "at": now, "outcome": outcome or {}}
+        )
+        if status != "retrying":
+            workflow["current_step"] = ""
+            if state.get("current_step") == step_id:
+                state["current_step"] = ""
+        self.write_state(run_id, state)
+        return state
+
+    def record_step_failed(
+        self, run_id: str, step_id: str, *, error: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Persist durable workflow step failure."""
+
+        state = self.read_state(run_id)
+        workflow, record = _workflow_record(state, step_id)
+        now = utc_now()
+        error_data = redact(error)
+        record.update(
+            {
+                "step_id": step_id,
+                "status": "failed",
+                "finished_at": now,
+                "outcome": None,
+                "error": error_data,
+            }
+        )
+        if not record.get("started_at"):
+            record["started_at"] = now
+        workflow["current_step"] = step_id
+        workflow["last_step"] = step_id
+        workflow["last_failure"] = {"step_id": step_id, **error_data}
+        workflow.setdefault("history", []).append(
+            {"step_id": step_id, "status": "failed", "at": now, "error": error_data}
+        )
+        state["current_step"] = step_id
+        self.write_state(run_id, state)
+        return state
+
     def update_from_context(
         self, run_id: str, ctx: WorkflowContext | None
     ) -> dict[str, Any]:
@@ -444,6 +541,29 @@ def followup_sequence(followup_id: str) -> int:
     if match is None:
         raise ValueError(f"invalid follow-up id: {followup_id}")
     return int(match.group("sequence"))
+
+
+def _workflow_record(
+    state: dict[str, Any], step_id: str
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Return mutable workflow state and per-step record."""
+
+    workflow = state.setdefault("workflow", {})
+    if not isinstance(workflow, dict):
+        workflow = {}
+        state["workflow"] = workflow
+    steps = workflow.setdefault("steps", {})
+    if not isinstance(steps, dict):
+        steps = {}
+        workflow["steps"] = steps
+    record = steps.setdefault(step_id, {})
+    if not isinstance(record, dict):
+        record = {}
+        steps[step_id] = record
+    history = workflow.setdefault("history", [])
+    if not isinstance(history, list):
+        workflow["history"] = []
+    return workflow, record
 
 
 def _append_private_json_line(path: Path, value: dict[str, Any]) -> None:

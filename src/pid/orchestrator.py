@@ -228,17 +228,46 @@ class OrchestratorSupervisor:
         if options.dry_run:
             return OrchestratorRunResult(run_id, self.store.read_state(run_id))
 
-        launched = launch_ready_children(
+        state = self.store.read_state(run_id)
+        state["children"] = reconcile_children(
+            self.store,
             children,
             parent_run_id=run_id,
             config_path=options.config_path,
             default_thinking=self.config.agent.default_thinking,
             concurrency=concurrency,
         )
+        state["status"] = orchestrator_children_status(state["children"])
+        self.store.write_state(run_id, state)
+        return OrchestratorRunResult(run_id, self.store.read_state(run_id))
+
+    def reconcile(
+        self, run_id: str, *, config_path: Path | None = None
+    ) -> OrchestratorRunResult:
+        """Reconcile child run states and launch newly unblocked children."""
+
         state = self.store.read_state(run_id)
-        state["children"] = launched
-        if not any(child.get("status") == "launched" for child in launched):
-            state["status"] = "blocked"
+        if state.get("run_type") != "orchestrator":
+            raise ValueError(f"run is not an orchestrator run: {run_id}")
+        children = state.get("children", [])
+        if not isinstance(children, list):
+            children = []
+        concurrency = int(
+            state.get("concurrency") or self.config.orchestrator.max_parallel_agents
+        )
+        state["children"] = reconcile_children(
+            self.store,
+            [
+                cast("dict[str, Any]", child)
+                for child in children
+                if isinstance(child, dict)
+            ],
+            parent_run_id=run_id,
+            config_path=config_path,
+            default_thinking=self.config.agent.default_thinking,
+            concurrency=concurrency,
+        )
+        state["status"] = orchestrator_children_status(state["children"])
         self.store.write_state(run_id, state)
         return OrchestratorRunResult(run_id, self.store.read_state(run_id))
 
@@ -668,22 +697,163 @@ def launch_ready_children(
     for child in children:
         if child.get("dependencies"):
             child["status"] = "blocked"
+            child["blocked_reason"] = "waiting for dependencies"
             continue
         if launched >= concurrency:
             child["status"] = "queued"
             continue
-        command = child_agent_command(
+        launch_child(
             child,
             parent_run_id=parent_run_id,
             config_path=config_path,
             default_thinking=default_thinking,
         )
-        process = subprocess.Popen(command, cwd=Path.cwd(), env=os.environ.copy())  # noqa: S603 - command is constructed from pid allow-listed arguments
-        child["pid"] = process.pid
-        child["status"] = "launched"
-        child["launch_command"] = command
         launched += 1
     return children
+
+
+SUCCESS_CHILD_STATUSES = {"succeeded", "no_changes"}
+FAILED_CHILD_STATUSES = {"failed", "aborted"}
+ACTIVE_CHILD_STATUSES = {"launched", "running"}
+PENDING_CHILD_STATUSES = {"planned", "queued", "blocked"}
+
+
+def reconcile_children(
+    store: RunStore,
+    children: list[dict[str, Any]],
+    *,
+    parent_run_id: str,
+    config_path: Path | None,
+    default_thinking: str,
+    concurrency: int,
+) -> list[dict[str, Any]]:
+    """Reconcile child run states and launch ready dependency waves."""
+
+    by_item_id = {str(child.get("item_id", "")): child for child in children}
+    for child in children:
+        reconcile_child_status(store, child)
+
+    active = sum(
+        1 for child in children if child.get("status") in ACTIVE_CHILD_STATUSES
+    )
+    for child in children:
+        status = str(child.get("status", ""))
+        if status not in PENDING_CHILD_STATUSES:
+            continue
+        dependency_state = child_dependency_state(child, by_item_id)
+        if dependency_state["failed"]:
+            child["status"] = "blocked"
+            child["blocked_reason"] = "dependency failed: " + ", ".join(
+                dependency_state["failed"]
+            )
+            continue
+        if dependency_state["waiting"]:
+            child["status"] = "blocked"
+            child["blocked_reason"] = "waiting for dependencies: " + ", ".join(
+                dependency_state["waiting"]
+            )
+            continue
+        child["blocked_reason"] = ""
+        if active >= concurrency:
+            child["status"] = "queued"
+            continue
+        launch_child(
+            child,
+            parent_run_id=parent_run_id,
+            config_path=config_path,
+            default_thinking=default_thinking,
+        )
+        active += 1
+    return children
+
+
+def reconcile_child_status(store: RunStore, child: dict[str, Any]) -> None:
+    """Project child run state onto parent child record without regressing launch."""
+
+    child_run_id = str(child.get("child_run_id", ""))
+    try:
+        child_state = store.read_state(child_run_id)
+    except OSError, ValueError:
+        child["status"] = "blocked"
+        child["blocked_reason"] = "child run state missing"
+        return
+
+    store_status = str(child_state.get("status", ""))
+    current_status = str(child.get("status", ""))
+    if current_status == "launched" and store_status == "planned":
+        return
+    if store_status:
+        child["status"] = store_status
+    if child_state.get("pr_url"):
+        child["pr_url"] = child_state["pr_url"]
+
+
+def child_dependency_state(
+    child: dict[str, Any], by_item_id: dict[str, dict[str, Any]]
+) -> dict[str, list[str]]:
+    """Return dependency ids grouped by waiting/failed state."""
+
+    waiting: list[str] = []
+    failed: list[str] = []
+    for dependency in string_list(child.get("dependencies", [])):
+        dependency_child = by_item_id.get(dependency)
+        if dependency_child is None:
+            failed.append(f"{dependency} (missing)")
+            continue
+        status = str(dependency_child.get("status", ""))
+        if status in SUCCESS_CHILD_STATUSES:
+            continue
+        if status in FAILED_CHILD_STATUSES or dependency_child.get(
+            "blocked_reason", ""
+        ).startswith("dependency failed:"):
+            failed.append(dependency)
+            continue
+        waiting.append(dependency)
+    return {"waiting": waiting, "failed": failed}
+
+
+def launch_child(
+    child: dict[str, Any],
+    *,
+    parent_run_id: str,
+    config_path: Path | None,
+    default_thinking: str,
+) -> None:
+    """Launch one child pid agent subprocess and update its parent record."""
+
+    command = child_agent_command(
+        child,
+        parent_run_id=parent_run_id,
+        config_path=config_path,
+        default_thinking=default_thinking,
+    )
+    process = subprocess.Popen(command, cwd=Path.cwd(), env=os.environ.copy())  # noqa: S603 - command is constructed from pid allow-listed arguments
+    child["pid"] = process.pid
+    child["status"] = "launched"
+    child["launch_command"] = command
+
+
+def orchestrator_children_status(children: object) -> str:
+    """Return aggregate orchestrator status from child records."""
+
+    if not isinstance(children, list) or not children:
+        return "planned"
+    statuses = []
+    for child in children:
+        if isinstance(child, dict):
+            child_data = cast("dict[str, object]", child)
+            statuses.append(str(child_data.get("status", "")))
+    if statuses and all(status in SUCCESS_CHILD_STATUSES for status in statuses):
+        return "succeeded"
+    if any(status in ACTIVE_CHILD_STATUSES for status in statuses):
+        return "running"
+    if any(status == "queued" for status in statuses):
+        return "running"
+    if any(status in FAILED_CHILD_STATUSES for status in statuses):
+        return "failed"
+    if statuses and all(status == "blocked" for status in statuses):
+        return "blocked"
+    return "planned"
 
 
 def child_agent_command(

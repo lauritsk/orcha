@@ -18,11 +18,13 @@ squash-merges the PR, and cleans up.
 - Creates, updates, checks, retries, and squash-merges PRs with a configurable
   forge CLI (`gh` by default).
 - Handles CI failure follow-ups and moved-base rebase retries.
-- Offers opt-in `pid agent` supervision with durable run state and typed failures.
+- Offers opt-in `pid agent` supervision with durable run state, durable workflow
+  step outcomes, and typed failures.
 - Queues durable follow-ups to supervised runs and applies them at safe
   checkpoints.
-- Starts orchestrator runs that ask intake questions, persist plans, and launch
-  child pid agent sessions in parallel waves.
+- Starts orchestrator runs that ask intake questions, persist plans, launch child
+  pid agent sessions in dependency waves, and reconcile later waves after
+  dependencies finish.
 - Lists active and historical pid sessions.
 - Supports workflow extensions under `pid x ...`.
 - Optionally keeps the screen awake on macOS while pid runs.
@@ -96,6 +98,7 @@ children in parallel unless `--dry-run` is set:
 pid orchestrator
 pid orchestrator --goal "ship the larger change"
 pid orchestrator --goal "ship the larger change" --plan-file plan.json
+pid orchestrator reconcile <run-id>
 pid orchestrator follow-up <run-id> --target api --message "Rename endpoint to /v2/tasks"
 ```
 
@@ -135,6 +138,7 @@ pid agent follow-up RUN_ID --message TEXT [--type TYPE]
 pid agent status RUN_ID
 pid agent runs
 pid orchestrator [start] --goal TEXT [--plan-file plan.json] [--dry-run]
+pid orchestrator reconcile RUN_ID
 pid orchestrator follow-up RUN_ID --message TEXT [--target ITEM|--all]
 pid orchestrator status RUN_ID
 pid orchestrator runs
@@ -166,11 +170,12 @@ pid --version
 | `--output agent` | Also show successful agent stderr. |
 | `--output all` | Show successful output from every captured command. Full logs are always written to the session log. |
 | `pid init` | Write recommended defaults to the platform config path. Refuses to overwrite an existing file. |
-| `pid agent`, `pid agent start` | Run supervised workflow mode. Stores state under the git common dir by default. In a TTY, missing startup options are prompted. |
+| `pid agent`, `pid agent start` | Run supervised workflow mode. Stores state and per-step workflow outcomes under the git common dir by default. In a TTY, missing startup options are prompted. |
 | `pid agent follow-up RUN_ID` | Queue a durable follow-up for a supervised run. Valid types are `clarify`, `scope_change`, `pause`, and `abort`. Running children apply it at the next safe checkpoint. |
 | `pid agent status RUN_ID` | Show current step, status, PR URL, failure, and follow-up counts for a run. |
 | `pid agent runs` | List recent supervised runs. |
 | `pid orchestrator`, `pid orchestrator start`, `pid o` | Create a larger-run coordinator. In a TTY, missing startup options and no-plan intake answers are prompted. Without `--plan-file` in non-interactive mode, prints intake questions; with a plan, creates child runs and launches ready children. |
+| `pid orchestrator reconcile RUN_ID` | Refresh child statuses, launch newly unblocked dependency waves, and mark blocked children with a reason. |
 | `pid orchestrator follow-up RUN_ID` | Record a global follow-up or route it to child run inboxes with `--target` or `--all`. Uses the same follow-up types as `pid agent follow-up`. |
 | `pid orchestrator status RUN_ID` | Show orchestrator status and child run IDs/statuses. |
 | `pid orchestrator runs` | List recent orchestrator runs. |
@@ -268,7 +273,11 @@ validation_commands = ["mise run check"]
 
 When `store_dir` is empty, `pid agent` writes under
 `<git-common-dir>/pid/runs/`, outside the worktree. Run directories and state
-files are created with user-private permissions where supported.
+files are created with user-private permissions where supported. Supervised runs
+persist each workflow step start, success, skip, retry, or failure under the
+run's `workflow.steps` state. This is the durable foundation for future
+`pid agent resume <run-id>` support; today, operators can inspect or reconcile
+stored state but full in-process step resume is not exposed as a CLI command.
 
 Configure any project setup or harness trust command with `setup_command`.
 The default is `["mise", "trust", "."]` and is skipped when `mise` is not on

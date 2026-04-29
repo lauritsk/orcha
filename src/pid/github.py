@@ -182,6 +182,3 @@ class Forge:
             "head_oid": head_oid,
             "pr_url": pr_url,
         }
-
-
-GitHub = Forge

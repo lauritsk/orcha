@@ -237,15 +237,11 @@ def test_cli_agent_formatters_and_parser() -> None:
             "high",
             "--non-interactive",
             "--yes",
-            "--advisor",
-            "policy",
-            "--confirm-merge",
         ]
     )
 
     assert options.branch == "feature/x"
     assert options.attempts == 2
-    assert options.confirm_merge is True
     with pytest.raises(ValueError, match="positive integer"):
         _parse_agent_start(["--branch", "x", "--prompt", "p", "--attempts", "0"])
     with pytest.raises(ValueError, match="unexpected"):
@@ -295,19 +291,9 @@ def test_run_agent_command_status_runs_and_errors(
     )
     assert (
         _run_agent_command(
-            ["resume", run_id], config=config, output_mode=OutputMode.NORMAL
-        )
-        == 2
-    )
-    assert (
-        _run_agent_command(
             ["status", "bad"], config=config, output_mode=OutputMode.NORMAL
         )
         == 1
-    )
-    assert (
-        _run_agent_command(["resume"], config=config, output_mode=OutputMode.NORMAL)
-        == 2
     )
     assert (
         _run_agent_command(
@@ -325,7 +311,7 @@ def test_run_agent_command_status_runs_and_errors(
         )
         == 2
     )
-    assert "agent resume cannot reconstruct" in capsys.readouterr().err
+    assert "unknown agent command" in capsys.readouterr().err
 
     disabled = PIDConfig(
         orchestrator=OrchestratorConfig(enabled=False, store_dir=str(store.root))
@@ -338,12 +324,6 @@ def test_run_agent_command_status_runs_and_errors(
         )
         == 2
     )
-    pi_advisor = _run_agent_command(
-        ["start", "--branch", "x", "--prompt", "p", "--advisor", "pi"],
-        config=config,
-        output_mode=OutputMode.NORMAL,
-    )
-    assert pi_advisor == 2
     invalid_thinking = _run_agent_command(
         ["start", "--branch", "x", "--prompt", "p", "--thinking", "bogus"],
         config=config,
@@ -382,13 +362,13 @@ def test_failure_policy_and_orchestrator_helpers(tmp_path: Path) -> None:
     assert worktree_failure.context["worktree_path"] == "/tmp/worktree"
 
     policy = DeterministicRecoveryPolicy()
-    assert policy.decide(failure, state={}).kind == RecoveryActionKind.MARK_DONE
+    assert policy.decide(failure).kind == RecoveryActionKind.MARK_DONE
     cleanup = failure_from_abort(code=1, step="pr_cleanup", context=None)
-    assert policy.decide(cleanup, state={}).kind == RecoveryActionKind.CLEANUP_RETRY
+    assert policy.decide(cleanup).kind == RecoveryActionKind.CLEANUP_RETRY
     dirty = failure_from_abort(
         code=1, step="validate_clean_main_worktree", context=None
     )
-    assert policy.decide(dirty, state={}).kind == RecoveryActionKind.ASK_USER
+    assert policy.decide(dirty).kind == RecoveryActionKind.ASK_USER
 
     options = AgentStartOptions(
         branch="feature/x", prompt="do work", attempts=2, thinking="high"
@@ -404,9 +384,6 @@ def test_failure_policy_and_orchestrator_helpers(tmp_path: Path) -> None:
         "feature/x",
         "do work",
     ]
-    agent = OrchestratorAgent(config=PIDConfig(), store=RunStore(tmp_path / "runs"))
-    with pytest.raises(ValueError, match="only deterministic"):
-        agent.start(AgentStartOptions(branch="x", prompt="p", advisor="pi"))
 
 
 def test_agent_follow_up_cli_queues_message(

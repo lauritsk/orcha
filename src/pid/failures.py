@@ -15,7 +15,6 @@ class FailureKind(StrEnum):
     INVALID_ARGS = "invalid_args"
     MISSING_COMMAND = "missing_command"
     DIRTY_MAIN_WORKTREE = "dirty_main_worktree"
-    BRANCH_EXISTS = "branch_exists"
     WORKTREE_EXISTS = "worktree_exists"
     MISE_TRUST_FAILED = "mise_trust_failed"
     INITIAL_AGENT_FAILED = "initial_agent_failed"
@@ -27,7 +26,6 @@ class FailureKind(StrEnum):
     PR_FAILED = "pr_failed"
     CHECKS_FAILED = "checks_failed"
     MERGE_FAILED = "merge_failed"
-    REBASE_IN_PROGRESS = "rebase_in_progress"
     CLEANUP_FAILED = "cleanup_failed"
     EXTENSION_FAILED = "extension_failed"
     FOLLOWUP_PAUSED = "followup_paused"
@@ -43,7 +41,6 @@ class WorkflowFailure(Exception):
     code: int
     message: str
     recoverable: bool
-    diagnostics: str = ""
     context: dict[str, Any] = field(default_factory=dict)
 
     def __str__(self) -> str:
@@ -59,8 +56,6 @@ class WorkflowFailure(Exception):
             "message": self.message,
             "recoverable": self.recoverable,
         }
-        if self.diagnostics:
-            data["diagnostics"] = self.diagnostics
         if self.context:
             data["context"] = self.context
         return data

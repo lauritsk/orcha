@@ -268,8 +268,6 @@ def _parse_agent_start_partial(argv: list[str]) -> tuple[argparse.Namespace, lis
     parser.add_argument("--thinking")
     parser.add_argument("--non-interactive", action="store_true")
     parser.add_argument("--yes", action="store_true")
-    parser.add_argument("--advisor", choices=("policy", "pi"), default="policy")
-    parser.add_argument("--confirm-merge", action="store_true")
     parser.add_argument("--run-id", default="")
     parser.add_argument("--parent-run-id", default="")
     parser.add_argument("--plan-item-id", default="")
@@ -300,14 +298,6 @@ def _normalized_agent_start_args(
     args = ["--branch", branch, "--prompt", prompt, "--attempts", attempts]
     if thinking:
         args.extend(["--thinking", thinking])
-    if namespace.non_interactive:
-        args.append("--non-interactive")
-    if namespace.yes:
-        args.append("--yes")
-    if namespace.advisor != "policy":
-        args.extend(["--advisor", namespace.advisor])
-    if namespace.confirm_merge:
-        args.append("--confirm-merge")
     for option, value in (
         ("--run-id", namespace.run_id),
         ("--parent-run-id", namespace.parent_run_id),
@@ -338,10 +328,6 @@ def _normalized_orchestrator_start_args(
         args.extend(["--plan-file", plan_file])
     if namespace.dry_run:
         args.append("--dry-run")
-    if namespace.non_interactive:
-        args.append("--non-interactive")
-    if namespace.yes:
-        args.append("--yes")
     return args
 
 

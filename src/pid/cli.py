@@ -29,7 +29,6 @@ from pid.models import OutputMode
 from pid.orchestrator import (
     AgentStartOptions,
     OrchestratorAgent,
-    OrchestratorDisabled,
     OrchestratorFollowUpOptions,
     OrchestratorStartOptions,
     OrchestratorSupervisor,
@@ -51,7 +50,7 @@ X_USAGE = "usage: pid x <extension-command> [ARGS...]"
 AGENT_USAGE = (
     "usage: pid agent [start] --branch BRANCH --prompt TEXT [--attempts N] "
     "[--thinking LEVEL]\n"
-    "       pid agent follow-up|resume|status|runs ..."
+    "       pid agent follow-up|status|runs ..."
 )
 ORCHESTRATOR_USAGE = (
     "usage: pid orchestrator [start] --goal TEXT [--plan-file plan.json] "
@@ -106,7 +105,7 @@ def main(
 
     Info commands:
 
-    - pid agent [start]|follow-up|resume|status|runs
+    - pid agent [start]|follow-up|status|runs
     - pid orchestrator [start]|follow-up|status|runs
     - pid sessions [--all|-a]
     - pid config show|default|path
@@ -253,18 +252,6 @@ def _run_agent_command(
             echo_err(f"pid: could not read run {raw_args[1]}: {error}")
             return 1
         return 0
-    if command == "resume":
-        if len(raw_args) != 2:
-            echo_err("usage: pid agent resume RUN_ID")
-            return 2
-        try:
-            state = store.read_state(raw_args[1])
-        except (OSError, ValueError) as error:
-            echo_err(f"pid: could not read run {raw_args[1]}: {error}")
-            return 1
-        typer.echo(_run_status(state), nl=False)
-        echo_err("pid: agent resume cannot reconstruct workflow context yet")
-        return 2
     if command == "follow-up":
         try:
             run_id, kind, message = _parse_agent_follow_up(raw_args[1:])
@@ -301,9 +288,6 @@ def _run_agent_command(
             output_mode=output_mode,
         )
         result = agent.start(options)
-    except OrchestratorDisabled as error:  # pragma: no cover - prechecked above
-        echo_err(f"pid: {error}")
-        return 2
     except ValueError as error:
         echo_err(f"pid: {error}")
         return 2
@@ -322,8 +306,6 @@ def _parse_agent_start(raw_args: list[str]) -> AgentStartOptions:
     parser.add_argument("--thinking", default="")
     parser.add_argument("--non-interactive", action="store_true")
     parser.add_argument("--yes", action="store_true")
-    parser.add_argument("--advisor", choices=("policy", "pi"), default="policy")
-    parser.add_argument("--confirm-merge", action="store_true")
     parser.add_argument("--run-id", default="")
     parser.add_argument("--parent-run-id", default="")
     parser.add_argument("--plan-item-id", default="")
@@ -347,10 +329,6 @@ def _parse_agent_start(raw_args: list[str]) -> AgentStartOptions:
         prompt=prompt,
         attempts=namespace.attempts,
         thinking=thinking,
-        non_interactive=namespace.non_interactive,
-        yes=namespace.yes,
-        advisor=namespace.advisor,
-        confirm_merge=namespace.confirm_merge,
         run_id=namespace.run_id.strip(),
         parent_run_id=namespace.parent_run_id.strip(),
         plan_item_id=namespace.plan_item_id.strip(),
@@ -513,7 +491,6 @@ def _parse_orchestrator_start(
         concurrency=namespace.concurrency,
         dry_run=namespace.dry_run,
         non_interactive=namespace.non_interactive,
-        yes=namespace.yes,
         config_path=config_path,
     )
 

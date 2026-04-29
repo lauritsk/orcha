@@ -132,7 +132,6 @@ pid agent [start] --branch BRANCH --prompt TEXT [--attempts N] [--thinking LEVEL
 pid agent follow-up RUN_ID --message TEXT [--type TYPE]
 pid agent status RUN_ID
 pid agent runs
-pid agent resume RUN_ID
 pid orchestrator [start] --goal TEXT [--plan-file plan.json] [--dry-run]
 pid orchestrator follow-up RUN_ID --message TEXT [--target ITEM|--all]
 pid orchestrator status RUN_ID
@@ -166,12 +165,11 @@ pid --version
 | `--output all` | Show successful output from every captured command. Full logs are always written to the session log. |
 | `pid init` | Write recommended defaults to the platform config path. Refuses to overwrite an existing file. |
 | `pid agent`, `pid agent start` | Run supervised workflow mode. Stores state under the git common dir by default. In a TTY, missing startup options are prompted. |
-| `pid agent follow-up RUN_ID` | Queue a durable follow-up for a supervised run. Running children apply it at the next safe checkpoint. |
+| `pid agent follow-up RUN_ID` | Queue a durable follow-up for a supervised run. Valid types are `clarify`, `scope_change`, `pause`, and `abort`. Running children apply it at the next safe checkpoint. |
 | `pid agent status RUN_ID` | Show current step, status, PR URL, failure, and follow-up counts for a run. |
 | `pid agent runs` | List recent supervised runs. |
-| `pid agent resume RUN_ID` | Reserved for resumable recovery; currently reports saved state and exits with guidance. |
 | `pid orchestrator`, `pid orchestrator start` | Create a larger-run coordinator. In a TTY, missing startup options are prompted. Without `--plan-file`, prints intake questions; with a plan, creates child runs and launches ready children. |
-| `pid orchestrator follow-up RUN_ID` | Record a global follow-up or route it to child run inboxes with `--target` or `--all`. |
+| `pid orchestrator follow-up RUN_ID` | Record a global follow-up or route it to child run inboxes with `--target` or `--all`. Uses the same follow-up types as `pid agent follow-up`. |
 | `pid orchestrator status RUN_ID` | Show orchestrator status and child run IDs/statuses. |
 | `pid orchestrator runs` | List recent orchestrator runs. |
 | `pid sessions` | List active pid sessions from session logs. |

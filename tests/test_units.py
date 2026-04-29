@@ -508,9 +508,6 @@ def test_resolve_agent_start_args_preserves_start_options(
             "--branch",
             "feature/x",
             "--yes",
-            "--advisor",
-            "pi",
-            "--confirm-merge",
             "--run-id",
             "run1",
             "--parent-run-id",
@@ -528,10 +525,6 @@ def test_resolve_agent_start_args_preserves_start_options(
         "3",
         "--thinking",
         "medium",
-        "--yes",
-        "--advisor",
-        "pi",
-        "--confirm-merge",
         "--run-id",
         "run1",
         "--parent-run-id",
@@ -604,7 +597,6 @@ def test_resolve_orchestrator_start_args_preserves_start_options(
         "--plan-file",
         "plan.json",
         "--dry-run",
-        "--yes",
     ]
 
 

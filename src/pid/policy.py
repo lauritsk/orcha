@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any
 
 from pid.failures import FailureKind, WorkflowFailure
 
@@ -12,11 +11,6 @@ from pid.failures import FailureKind, WorkflowFailure
 class RecoveryActionKind(StrEnum):
     """Allowed bounded recovery actions."""
 
-    RETRY_WORKFLOW = "retry_workflow"
-    RETRY_STEP = "retry_step"
-    RETRY_WITH_BUMPED_THINKING = "retry_with_bumped_thinking"
-    RUN_AGENT_FIX = "run_agent_fix"
-    EXTEND_WAIT = "extend_wait"
     ASK_USER = "ask_user"
     ABORT = "abort"
     MARK_DONE = "mark_done"
@@ -29,24 +23,17 @@ class RecoveryAction:
 
     kind: RecoveryActionKind
     reason: str
-    params: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> dict[str, Any]:
-        data: dict[str, Any] = {"kind": self.kind.value, "reason": self.reason}
-        if self.params:
-            data["params"] = self.params
-        return data
+    def to_dict(self) -> dict[str, str]:
+        return {"kind": self.kind.value, "reason": self.reason}
 
 
 class DeterministicRecoveryPolicy:
-    """Conservative MVP policy. No arbitrary commands, no unsafe retries."""
+    """Conservative policy. No arbitrary commands, no unsafe retries."""
 
-    def decide(
-        self, failure: WorkflowFailure, *, state: dict[str, Any]
-    ) -> RecoveryAction:
-        """Choose a recovery action for failure and current run state."""
+    def decide(self, failure: WorkflowFailure) -> RecoveryAction:
+        """Choose a recovery action for a terminal failure."""
 
-        _ = state
         if failure.kind == FailureKind.NO_CHANGES:
             return RecoveryAction(
                 RecoveryActionKind.MARK_DONE,
@@ -69,7 +56,6 @@ class DeterministicRecoveryPolicy:
             FailureKind.INVALID_ARGS,
             FailureKind.MISSING_COMMAND,
             FailureKind.DIRTY_MAIN_WORKTREE,
-            FailureKind.BRANCH_EXISTS,
             FailureKind.WORKTREE_EXISTS,
             FailureKind.MISE_TRUST_FAILED,
         }:

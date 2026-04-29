@@ -41,10 +41,6 @@ class AgentStartOptions:
     prompt: str
     attempts: int = 3
     thinking: str = ""
-    non_interactive: bool = False
-    yes: bool = False
-    advisor: str = "policy"
-    confirm_merge: bool = False
     run_id: str = ""
     parent_run_id: str = ""
     plan_item_id: str = ""
@@ -69,7 +65,6 @@ class OrchestratorStartOptions:
     concurrency: int = 4
     dry_run: bool = False
     non_interactive: bool = False
-    yes: bool = False
     config_path: Path | None = None
 
 
@@ -120,8 +115,6 @@ class OrchestratorAgent:
     def start(self, options: AgentStartOptions) -> AgentRunResult:
         """Start one supervised workflow run."""
 
-        if options.advisor != "policy":
-            raise ValueError("only deterministic policy advisor is supported")
         if (
             options.thinking
             and options.thinking not in self.config.agent.thinking_levels
@@ -153,19 +146,13 @@ class OrchestratorAgent:
             ctx = flow.run_supervised(argv)
         except WorkflowFailure as failure:
             self.store.update_from_context(run_id, flow.context)
-            state = self.store.read_state(run_id)
-            action = self.policy.decide(failure, state=state)
+            action = self.policy.decide(failure)
             if action.kind == RecoveryActionKind.MARK_DONE:
-                stopped = (
-                    "no_changes"
-                    if failure.kind == FailureKind.NO_CHANGES
-                    else "stopped"
-                )
                 state = self.store.mark_failed(
                     run_id,
                     failure,
                     pending_recovery_action=action.to_dict(),
-                    status=stopped,
+                    status="no_changes",
                 )
                 return AgentRunResult(run_id, state, failure.code)
             if failure.kind == FailureKind.FOLLOWUP_PAUSED:

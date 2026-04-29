@@ -1496,30 +1496,6 @@ class PIDFlow:
             )
         return bumped_level
 
-    def finish_successful_merge(
-        self,
-        *,
-        pr_url: str,
-        pr_title: str,
-        main_worktree: str,
-        default_branch: str,
-        branch: str,
-        worktree_path: str,
-    ) -> None:
-        if not self.wait_for_confirmed_merge(
-            pr_url=pr_url, worktree_path=worktree_path
-        ):
-            abort(1)
-
-        self.cleanup_and_print_success(
-            pr_url=pr_url,
-            pr_title=pr_title,
-            main_worktree=main_worktree,
-            default_branch=default_branch,
-            branch=branch,
-            worktree_path=worktree_path,
-        )
-
     def wait_for_confirmed_merge(self, *, pr_url: str, worktree_path: str) -> bool:
         """Wait until the forge reports a successful merge is actually merged."""
 

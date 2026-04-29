@@ -26,11 +26,7 @@ FOLLOWUP_KINDS = (
     "clarify",
     "scope_change",
     "pause",
-    "resume",
     "abort",
-    "rerun",
-    "merge_policy",
-    "status_request",
 )
 
 
@@ -78,7 +74,6 @@ class RunPaths:
     state: Path
     events: Path
     followups: Path
-    diagnostics: Path
 
 
 class RunStore:
@@ -115,7 +110,6 @@ class RunStore:
             state=directory / "state.json",
             events=directory / "events.jsonl",
             followups=directory / "followups.jsonl",
-            diagnostics=directory / "diagnostics",
         )
 
     def create_run(
@@ -158,7 +152,6 @@ class RunStore:
             return state
 
         _ensure_private_dir(paths.directory, exist_ok=False)
-        _ensure_private_dir(paths.diagnostics)
         now = utc_now()
         state: dict[str, Any] = {
             "run_id": run_id,
@@ -206,7 +199,6 @@ class RunStore:
         run_id = generate_run_id()
         paths = self.paths(run_id)
         _ensure_private_dir(paths.directory, exist_ok=False)
-        _ensure_private_dir(paths.diagnostics)
         now = utc_now()
         state: dict[str, Any] = {
             "run_id": run_id,

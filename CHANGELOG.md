@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## [v0.10.1](https://github.com/lauritsk/pid/compare/8a131ab553c23675e5ba37d6283e2c85593aae5b..v0.10.1) - 2026-04-29
+#### Bug Fixes
+- (**release**) restore buildx registry auth - ([8a131ab](https://github.com/lauritsk/pid/commit/8a131ab553c23675e5ba37d6283e2c85593aae5b)) - Karl Hans Laurits
+#### Miscellaneous Chores
+- update mise lockfile - ([929835b](https://github.com/lauritsk/pid/commit/929835b485420bc623a3677b894ba7c5671dd77e)) - Karl Hans Laurits
+
+- - -
+
 ## [v0.10.0](https://github.com/lauritsk/pid/compare/620dc4a2a46ea7c016624d1b4f8aa4b5db7e4c49..v0.10.0) - 2026-04-29
 #### Features
 - (**orchestrator**) route child follow-ups (#49) - ([34cf9aa](https://github.com/lauritsk/pid/commit/34cf9aa98f1e929f9a4f79aa66d0740f8760d1fc)) - Karl Hans Laurits

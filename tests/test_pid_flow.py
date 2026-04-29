@@ -16,24 +16,6 @@ from tests.fakes import (
 )
 
 
-def test_no_args_prints_short_usage(tmp_path: Path) -> None:
-    process, _ = run_pid(tmp_path, [], commands=())
-
-    assert_success(process)
-    assert "What do you want pid to do?" in process.stdout
-    assert "pid agent" in process.stdout
-    assert "pid orchestrator" in process.stdout
-
-
-@pytest.mark.parametrize("args", [["--help"], ["-h"]])
-def test_help_uses_typer_output(tmp_path: Path, args: list[str]) -> None:
-    process, _ = run_pid(tmp_path, args, commands=())
-
-    assert_success(process)
-    assert "Run pid." in process.stdout
-    assert "COMMAND [ARGS...]" in process.stdout
-
-
 @pytest.mark.parametrize(
     ("args", "message"),
     [

@@ -4,14 +4,20 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import sys
+from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass
+from io import StringIO
 from pathlib import Path
 from typing import Any
 
 from typer.testing import CliRunner
 
 from pid.cli import app
+from pid.commands import CommandRunner
+from pid.models import CommandResult
+from pid.output import write_command_output
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
@@ -537,6 +543,95 @@ def main():
 main()
 """
 
+_FAKE_COMMAND_NAMESPACE: dict[str, Any] | None = None
+
+
+def _fake_command_namespace() -> dict[str, Any]:
+    global _FAKE_COMMAND_NAMESPACE
+    if _FAKE_COMMAND_NAMESPACE is None:
+        source = FAKE_COMMAND.rsplit("\nmain()", 1)[0]
+        namespace: dict[str, Any] = {"__name__": "_pid_fake_command"}
+        exec(source, namespace)  # noqa: S102 - test fake command module
+        _FAKE_COMMAND_NAMESPACE = namespace
+    return _FAKE_COMMAND_NAMESPACE
+
+
+def _invoke_fake_command(
+    args: list[str],
+    *,
+    cwd: str | Path | None,
+    combine_output: bool,
+) -> CommandResult:
+    if shutil.which(args[0]) is None:
+        return CommandResult(127, "", f"pid: command not found: {args[0]}\n")
+    namespace = _fake_command_namespace()
+    namespace["state_path"] = Path(os.environ["PID_FAKE_STATE"])
+    previous_argv = sys.argv
+    previous_cwd = os.getcwd()
+    stdout = StringIO()
+    stderr = StringIO()
+    status = 0
+    try:
+        sys.argv = args
+        if cwd is not None:
+            os.chdir(cwd)
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            try:
+                namespace["main"]()
+            except SystemExit as error:
+                status = int(error.code or 0)
+    finally:
+        sys.argv = previous_argv
+        os.chdir(previous_cwd)
+
+    out = stdout.getvalue()
+    err = stderr.getvalue()
+    if combine_output:
+        return CommandResult(status, out + err, "")
+    return CommandResult(status, out, err)
+
+
+def _fake_runner_run(
+    self: CommandRunner,
+    args: list[str],
+    *,
+    cwd: str | Path | None = None,
+    combine_output: bool = False,
+) -> CommandResult:
+    command_log = self._start_command_log(
+        args,
+        cwd=cwd,
+        combine_output=combine_output,
+    )
+    try:
+        result = _invoke_fake_command(args, cwd=cwd, combine_output=combine_output)
+    except Exception as error:
+        self._log_command_exception(command_log, error)
+        raise
+    self._finish_command_log(command_log, result)
+    if self.writes_success_output() and result.returncode == 0:
+        write_command_output(result)
+    return result
+
+
+def _fake_runner_run_interactive(
+    self: CommandRunner,
+    args: list[str],
+    *,
+    cwd: str | Path | None = None,
+) -> CommandResult:
+    command_log = self._start_command_log(args, cwd=cwd, combine_output=False)
+    try:
+        result = _invoke_fake_command(args, cwd=cwd, combine_output=False)
+    except Exception as error:
+        self._log_command_exception(command_log, error)
+        raise
+    sys.stdout.write(result.stdout)
+    sys.stderr.write(result.stderr)
+    interactive_result = CommandResult(result.returncode, "", "")
+    self._finish_command_log(command_log, interactive_result)
+    return interactive_result
+
 
 def base_state(
     tmp_path: Path, *, branch: str = "feature/cool-stuff", **overrides: Any
@@ -566,11 +661,15 @@ def base_state(
 
 
 def install_fake_commands(bin_dir: Path, commands: tuple[str, ...]) -> None:
-    script = bin_dir / "fake-command.py"
-    script.write_text(f"#!{sys.executable}\n{FAKE_COMMAND}")
-    script.chmod(0o755)
+    shim = bin_dir / "fake-command-shim"
+    shim.write_text(
+        "#!/bin/sh\n"
+        "echo 'pid test fake command shim should not execute' >&2\n"
+        "exit 127\n"
+    )
+    shim.chmod(0o755)
     for command in commands:
-        os.symlink(script, bin_dir / command)
+        os.symlink(shim, bin_dir / command)
 
 
 @dataclass(frozen=True)
@@ -666,10 +765,16 @@ def run_pid(
             env[env_key] = str(state[state_key])
     runner = CliRunner()
     previous_cwd = os.getcwd()
+    original_run = CommandRunner.run
+    original_run_interactive = CommandRunner.run_interactive
+    setattr(CommandRunner, "run", _fake_runner_run)
+    setattr(CommandRunner, "run_interactive", _fake_runner_run_interactive)
     try:
         os.chdir(state["repo_root"])
         result = runner.invoke(app, _args_for_workflow_tests(args), env=env)
     finally:
+        setattr(CommandRunner, "run", original_run)
+        setattr(CommandRunner, "run_interactive", original_run_interactive)
         os.chdir(previous_cwd)
 
     process = CliProcess(result.exit_code, result.stdout, result.stderr)

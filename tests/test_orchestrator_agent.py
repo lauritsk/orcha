@@ -864,6 +864,17 @@ def test_orchestrator_helper_error_paths(tmp_path: Path) -> None:
             config=config,
         )
 
+    records = build_child_records(
+        {"items": [{"id": "!!!", "branch": "custom/branch", "prompt": "custom"}]},
+        goal="g",
+        parent_run_id="p",
+        branch_prefix="b",
+        config=config,
+    )
+    assert records[0]["item_id"] == "item-1"
+    assert records[0]["branch"] == "custom/branch"
+    assert records[0]["prompt"] == "custom"
+
     assert (
         select_thinking(
             title="Security migration",

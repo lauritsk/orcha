@@ -376,85 +376,180 @@ def build_child_records(
     """Return child launch records with branch, thinking, and prompt selected."""
 
     constraints = string_list(plan.get("constraints", []))
-    items = plan.get("items", [])
-    if not isinstance(items, list) or not items:
-        raise ValueError("plan must contain at least one item")
     records: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
-    for index, raw_item in enumerate(items, start=1):
-        if not isinstance(raw_item, dict):
-            raise ValueError("each plan item must be an object")
-        item = cast("dict[str, object]", raw_item)
-        title = str(item.get("title") or f"Item {index}").strip()
-        item_id = slug(str(item.get("id") or title or f"item-{index}"))
-        if not item_id:
-            item_id = f"item-{index}"
+    for index, raw_item in enumerate(_plan_items(plan), start=1):
+        item = _plan_item(raw_item)
+        title, item_id = _child_item_identity(item, index)
         if item_id in seen_ids:
             raise ValueError(f"duplicate plan item id: {item_id}")
         seen_ids.add(item_id)
-        scope = str(item.get("scope") or item.get("description") or "").strip()
-        acceptance = string_list(
-            item.get("acceptance", item.get("acceptance_criteria", []))
-        )
-        validation = string_list(
-            item.get(
-                "validation",
-                item.get(
-                    "validation_commands",
-                    list(config.orchestrator.validation_commands),
-                ),
-            )
-        )
-        dependencies = [
-            slug(value) for value in string_list(item.get("dependencies", []))
-        ]
-        branch = str(item.get("branch") or "").strip()
-        if not branch:
-            branch = f"{branch_prefix}/{item_id}-{slug(title)}".rstrip("-")
-        thinking = str(item.get("thinking") or "").strip()
-        if not thinking:
-            thinking = select_thinking(
-                title=title,
-                scope=scope,
-                acceptance=acceptance,
-                validation=validation,
-                config=config,
-            )
-        if thinking not in config.agent.thinking_levels:
-            levels = ", ".join(config.agent.thinking_levels)
-            raise ValueError(f"thinking for {item_id} must be one of: {levels}")
-        prompt = str(item.get("prompt") or "").strip()
-        if not prompt:
-            prompt = build_child_prompt(
-                goal=goal,
-                constraints=constraints,
+        records.append(
+            _build_child_record(
+                item,
                 item_id=item_id,
                 title=title,
-                scope=scope,
-                acceptance=acceptance,
-                validation=validation,
-                dependencies=dependencies,
+                goal=goal,
+                constraints=constraints,
+                parent_run_id=parent_run_id,
+                branch_prefix=branch_prefix,
+                config=config,
             )
-        records.append(
-            {
-                "item_id": item_id,
-                "title": title,
-                "scope": scope,
-                "acceptance": acceptance,
-                "validation": validation,
-                "dependencies": dependencies,
-                "branch": branch,
-                "thinking": thinking,
-                "prompt": prompt,
-                "child_run_id": generate_run_id(),
-                "parent_run_id": parent_run_id,
-                "status": "blocked" if dependencies else "planned",
-                "pid": None,
-                "launch_command": [],
-                "last_follow_up_id": "",
-            }
         )
     return records
+
+
+def _plan_items(plan: dict[str, Any]) -> list[object]:
+    items = plan.get("items", [])
+    if not isinstance(items, list) or not items:
+        raise ValueError("plan must contain at least one item")
+    return items
+
+
+def _plan_item(raw_item: object) -> dict[str, object]:
+    if not isinstance(raw_item, dict):
+        raise ValueError("each plan item must be an object")
+    return cast("dict[str, object]", raw_item)
+
+
+def _child_item_identity(item: dict[str, object], index: int) -> tuple[str, str]:
+    title = str(item.get("title") or f"Item {index}").strip()
+    item_id = slug(str(item.get("id") or title or f"item-{index}"))
+    if not item_id:
+        item_id = f"item-{index}"
+    return title, item_id
+
+
+def _build_child_record(
+    item: dict[str, object],
+    *,
+    item_id: str,
+    title: str,
+    goal: str,
+    constraints: list[str],
+    parent_run_id: str,
+    branch_prefix: str,
+    config: PIDConfig,
+) -> dict[str, Any]:
+    scope = _child_scope(item)
+    acceptance = string_list(
+        item.get("acceptance", item.get("acceptance_criteria", []))
+    )
+    validation = _child_validation(item, config)
+    dependencies = [slug(value) for value in string_list(item.get("dependencies", []))]
+    return {
+        "item_id": item_id,
+        "title": title,
+        "scope": scope,
+        "acceptance": acceptance,
+        "validation": validation,
+        "dependencies": dependencies,
+        "branch": _child_branch(
+            item, branch_prefix=branch_prefix, item_id=item_id, title=title
+        ),
+        "thinking": _child_thinking(
+            item,
+            item_id=item_id,
+            title=title,
+            scope=scope,
+            acceptance=acceptance,
+            validation=validation,
+            config=config,
+        ),
+        "prompt": _child_prompt(
+            item,
+            goal=goal,
+            constraints=constraints,
+            item_id=item_id,
+            title=title,
+            scope=scope,
+            acceptance=acceptance,
+            validation=validation,
+            dependencies=dependencies,
+        ),
+        "child_run_id": generate_run_id(),
+        "parent_run_id": parent_run_id,
+        "status": "blocked" if dependencies else "planned",
+        "pid": None,
+        "launch_command": [],
+        "last_follow_up_id": "",
+    }
+
+
+def _child_scope(item: dict[str, object]) -> str:
+    return str(item.get("scope") or item.get("description") or "").strip()
+
+
+def _child_validation(item: dict[str, object], config: PIDConfig) -> list[str]:
+    return string_list(
+        item.get(
+            "validation",
+            item.get(
+                "validation_commands", list(config.orchestrator.validation_commands)
+            ),
+        )
+    )
+
+
+def _child_branch(
+    item: dict[str, object], *, branch_prefix: str, item_id: str, title: str
+) -> str:
+    branch = str(item.get("branch") or "").strip()
+    if branch:
+        return branch
+    return f"{branch_prefix}/{item_id}-{slug(title)}".rstrip("-")
+
+
+def _child_thinking(
+    item: dict[str, object],
+    *,
+    item_id: str,
+    title: str,
+    scope: str,
+    acceptance: list[str],
+    validation: list[str],
+    config: PIDConfig,
+) -> str:
+    thinking = str(item.get("thinking") or "").strip()
+    if not thinking:
+        thinking = select_thinking(
+            title=title,
+            scope=scope,
+            acceptance=acceptance,
+            validation=validation,
+            config=config,
+        )
+    if thinking not in config.agent.thinking_levels:
+        levels = ", ".join(config.agent.thinking_levels)
+        raise ValueError(f"thinking for {item_id} must be one of: {levels}")
+    return thinking
+
+
+def _child_prompt(
+    item: dict[str, object],
+    *,
+    goal: str,
+    constraints: list[str],
+    item_id: str,
+    title: str,
+    scope: str,
+    acceptance: list[str],
+    validation: list[str],
+    dependencies: list[str],
+) -> str:
+    prompt = str(item.get("prompt") or "").strip()
+    if prompt:
+        return prompt
+    return build_child_prompt(
+        goal=goal,
+        constraints=constraints,
+        item_id=item_id,
+        title=title,
+        scope=scope,
+        acceptance=acceptance,
+        validation=validation,
+        dependencies=dependencies,
+    )
 
 
 def build_child_prompt(

@@ -15,6 +15,7 @@ from rich.table import Table
 from rich.text import Text
 
 from pid.config import PIDConfig
+from pid.parsing import is_positive_integer, is_unsigned_integer
 from pid.typer_parsing import TYPER_PARSER_CONTEXT, parse_typer_args
 
 
@@ -169,8 +170,8 @@ def resolve_interactive_args(argv: list[str], config: PIDConfig) -> list[str]:
 
     attempts = "3"
     thinking = config.agent.default_thinking
-    if args and re.fullmatch(r"[0-9]+", args[0]):
-        if re.fullmatch(r"[1-9][0-9]*", args[0]) is None:
+    if args and is_unsigned_integer(args[0]):
+        if not is_positive_integer(args[0]):
             return original
         attempts = args.pop(0)
         resolved.append(attempts)
@@ -264,7 +265,7 @@ def resolve_agent_start_args(argv: list[str], config: PIDConfig) -> list[str]:
             display=display,
         )
         prompted = True
-    elif re.fullmatch(r"[1-9][0-9]*", attempts) is None:
+    elif not is_positive_integer(attempts):
         return original
 
     if namespace.thinking is None and prompt_all_defaults:
@@ -368,7 +369,7 @@ def resolve_orchestrator_start_args(argv: list[str], config: PIDConfig) -> list[
             display=display,
         )
         prompted = True
-    elif re.fullmatch(r"[1-9][0-9]*", concurrency) is None:
+    elif not is_positive_integer(concurrency):
         return original
 
     if not branch_prefix:
@@ -654,6 +655,6 @@ def _prompt_positive_int(
         message = f"{label} (positive integer)"
         value = typer.prompt(message, default=default, show_default=True)
         display.record_prompt_result(message, value, default=default, show_default=True)
-        if re.fullmatch(r"[1-9][0-9]*", value):
+        if is_positive_integer(value):
             return value
         error = f"Enter a positive integer, e.g. {example}."

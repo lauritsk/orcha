@@ -7,6 +7,7 @@ import shlex
 import string
 import sys
 import tomllib
+from collections.abc import Collection, Sized
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -581,12 +582,10 @@ def parse_agent_config(data: Any, path: Path) -> AgentConfig:
     )
     label = string_value(data.get("label", default.label), path, "agent.label")
 
-    if not command:
-        fail_config(path, "agent.command must not be empty")
+    require_non_empty(command, path, "agent.command")
     if not command[0]:
         fail_config(path, "agent.command executable must not be empty")
-    if not non_interactive_args:
-        fail_config(path, "agent.non_interactive_args must not be empty")
+    require_non_empty(non_interactive_args, path, "agent.non_interactive_args")
     non_interactive_fields = validate_template(
         non_interactive_args,
         path,
@@ -601,14 +600,10 @@ def parse_agent_config(data: Any, path: Path) -> AgentConfig:
     )
     if "prompt" not in non_interactive_fields:
         fail_config(path, "agent.non_interactive_args must include {prompt}")
-    if not thinking_levels:
-        fail_config(path, "agent.thinking_levels must not be empty")
-    if any(not level for level in thinking_levels):
-        fail_config(path, "agent.thinking_levels must not contain empty strings")
-    if len(set(thinking_levels)) != len(thinking_levels):
-        fail_config(path, "agent.thinking_levels must not contain duplicates")
-    if not label:
-        fail_config(path, "agent.label must not be empty")
+    require_non_empty(thinking_levels, path, "agent.thinking_levels")
+    require_no_empty_strings(thinking_levels, path, "agent.thinking_levels")
+    require_unique(thinking_levels, path, "agent.thinking_levels")
+    require_non_empty(label, path, "agent.label")
     if default_thinking not in thinking_levels:
         fail_config(path, "agent.default_thinking must be in agent.thinking_levels")
     if review_thinking and review_thinking not in thinking_levels:
@@ -667,10 +662,12 @@ def parse_orchestrator_config(data: Any, path: Path) -> OrchestratorConfig:
         fail_config(path, "orchestrator.store_dir must be an absolute path")
     if max_parallel_agents < 1:
         fail_config(path, "orchestrator.max_parallel_agents must be positive")
-    if any(not command.strip() for command in validation_commands):
-        fail_config(
-            path, "orchestrator.validation_commands must not contain empty strings"
-        )
+    require_no_blank_strings(
+        validation_commands,
+        path,
+        "orchestrator.validation_commands",
+        blank_message="must not contain empty strings",
+    )
     return OrchestratorConfig(
         enabled=enabled,
         store_dir=store_dir,
@@ -788,12 +785,10 @@ def parse_forge_config(data: Any, path: Path) -> ForgeConfig:
         "forge.no_checks_markers",
     )
 
-    if not command:
-        fail_config(path, "forge.command must not be empty")
+    require_non_empty(command, path, "forge.command")
     if not command[0]:
         fail_config(path, "forge.command executable must not be empty")
-    if not label:
-        fail_config(path, "forge.label must not be empty")
+    require_non_empty(label, path, "forge.label")
     for key, args in {
         "forge.pr_view_args": pr_view_args,
         "forge.pr_create_args": pr_create_args,
@@ -801,8 +796,7 @@ def parse_forge_config(data: Any, path: Path) -> ForgeConfig:
         "forge.pr_url_args": pr_url_args,
         "forge.pr_merge_args": pr_merge_args,
     }.items():
-        if not args:
-            fail_config(path, f"{key} must not be empty")
+        require_non_empty(args, path, key)
 
     merge_fields = validate_forge_template(pr_merge_args, path, "forge.pr_merge_args")
     if "head_oid" in merge_fields and not pr_head_oid_args:
@@ -817,8 +811,7 @@ def parse_forge_config(data: Any, path: Path) -> ForgeConfig:
             path,
             "forge.checks_pending_exit_codes must not contain negative integers",
         )
-    if any(not marker.strip() for marker in no_checks_markers):
-        fail_config(path, "forge.no_checks_markers must not contain blank strings")
+    require_no_blank_strings(no_checks_markers, path, "forge.no_checks_markers")
 
     return ForgeConfig(
         command=command,
@@ -867,8 +860,7 @@ def parse_prompt_config(data: Any, path: Path) -> PromptConfig:
         "prompts.rebase_fix": rebase_fix,
     }
     for key, value in prompt_values.items():
-        if not value.strip():
-            fail_config(path, f"{key} must not be blank")
+        require_non_blank(value, path, key)
 
     message_fields = validate_text_template(
         message, path, "prompts.message", MESSAGE_PROMPT_FIELDS
@@ -880,8 +872,9 @@ def parse_prompt_config(data: Any, path: Path) -> PromptConfig:
     )
     if "output_path" not in message_fields:
         fail_config(path, "prompts.message must include {output_path}")
-    if diagnostic_output_limit < 0:
-        fail_config(path, "prompts.diagnostic_output_limit must be non-negative")
+    require_non_negative(
+        diagnostic_output_limit, path, "prompts.diagnostic_output_limit"
+    )
 
     return PromptConfig(
         message=message,
@@ -987,20 +980,17 @@ def parse_workflow_config(data: Any, path: Path) -> WorkflowConfig:
         "workflow.merge_retry_limit": merge_retry_limit,
     }
     for key, value in workflow_limits.items():
-        if value < 0:
-            fail_config(path, f"{key} must be non-negative")
+        require_non_negative(value, path, key)
     if setup_command and not setup_command[0].strip():
         fail_config(path, "workflow.setup_command executable must not be empty")
-    if base_refresh_limit < 0:
-        fail_config(path, "workflow.base_refresh_limit must be non-negative")
+    require_non_negative(base_refresh_limit, path, "workflow.base_refresh_limit")
     unknown_stages = set(base_refresh_stages) - set(BASE_REFRESH_STAGES)
     if unknown_stages:
         fail_config(
             path,
             f"workflow.base_refresh_stages contains unsupported stage: {sorted(unknown_stages)[0]}",
         )
-    if len(set(base_refresh_stages)) != len(base_refresh_stages):
-        fail_config(path, "workflow.base_refresh_stages must not contain duplicates")
+    require_unique(base_refresh_stages, path, "workflow.base_refresh_stages")
 
     return WorkflowConfig(
         checks_timeout_seconds=checks_timeout_seconds,
@@ -1030,14 +1020,17 @@ def parse_extension_config(data: Any, path: Path) -> ExtensionConfig:
     enabled = string_tuple(data.get("enabled", ()), path, "extensions.enabled")
     paths = string_tuple(data.get("paths", ()), path, "extensions.paths")
 
-    if not all(item.strip() for item in enabled):
-        fail_config(path, "extensions.enabled must not contain empty strings")
-    if not all(item.strip() for item in paths):
-        fail_config(path, "extensions.paths must not contain empty strings")
-    if len(set(enabled)) != len(enabled):
-        fail_config(path, "extensions.enabled must not contain duplicates")
-    if len(set(paths)) != len(paths):
-        fail_config(path, "extensions.paths must not contain duplicates")
+    require_no_blank_strings(
+        enabled,
+        path,
+        "extensions.enabled",
+        blank_message="must not contain empty strings",
+    )
+    require_no_blank_strings(
+        paths, path, "extensions.paths", blank_message="must not contain empty strings"
+    )
+    require_unique(enabled, path, "extensions.enabled")
+    require_unique(paths, path, "extensions.paths")
 
     extension_tables: dict[str, dict[str, Any]] = {}
     for key, value in data.items():
@@ -1045,11 +1038,57 @@ def parse_extension_config(data: Any, path: Path) -> ExtensionConfig:
             continue
         if not isinstance(value, dict):
             fail_config(path, f"[extensions.{key}] must be a table")
-        if not key.strip():
-            fail_config(path, "extension config names must not be empty")
+        require_non_blank(
+            key,
+            path,
+            "extension config names",
+            empty_message="must not be empty",
+        )
         extension_tables[key] = value
 
     return ExtensionConfig(enabled=enabled, paths=paths, config=extension_tables)
+
+
+def require_non_empty(value: Sized, path: Path, key: str) -> None:
+    if not value:
+        fail_config(path, f"{key} must not be empty")
+
+
+def require_non_blank(
+    value: str,
+    path: Path,
+    key: str,
+    *,
+    empty_message: str = "must not be blank",
+) -> None:
+    if not value.strip():
+        fail_config(path, f"{key} {empty_message}")
+
+
+def require_no_empty_strings(values: Collection[str], path: Path, key: str) -> None:
+    if any(not value for value in values):
+        fail_config(path, f"{key} must not contain empty strings")
+
+
+def require_no_blank_strings(
+    values: Collection[str],
+    path: Path,
+    key: str,
+    *,
+    blank_message: str = "must not contain blank strings",
+) -> None:
+    if any(not value.strip() for value in values):
+        fail_config(path, f"{key} {blank_message}")
+
+
+def require_unique(values: Collection[object], path: Path, key: str) -> None:
+    if len(set(values)) != len(values):
+        fail_config(path, f"{key} must not contain duplicates")
+
+
+def require_non_negative(value: int, path: Path, key: str) -> None:
+    if value < 0:
+        fail_config(path, f"{key} must be non-negative")
 
 
 def forge_args(

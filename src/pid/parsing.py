@@ -12,6 +12,16 @@ from pid.output import echo_err, echo_out
 USAGE = "usage: pid run [ATTEMPTS] [THINKING] BRANCH PROMPT..."
 SESSION_USAGE = "usage: pid session [ATTEMPTS] [THINKING] BRANCH [PROMPT...]"
 THINKING_LEVELS = DEFAULT_THINKING_LEVELS
+_UNSIGNED_INTEGER_PATTERN = re.compile(r"[0-9]+")
+_POSITIVE_INTEGER_PATTERN = re.compile(r"[1-9][0-9]*")
+
+
+def is_unsigned_integer(value: str) -> bool:
+    return _UNSIGNED_INTEGER_PATTERN.fullmatch(value) is not None
+
+
+def is_positive_integer(value: str) -> bool:
+    return _POSITIVE_INTEGER_PATTERN.fullmatch(value) is not None
 
 
 def parse_args(
@@ -38,9 +48,9 @@ def parse_args(
             abort(0)
 
     max_attempts = 3
-    if re.fullmatch(r"[0-9]+", args[0]):
+    if is_unsigned_integer(args[0]):
         attempts = args.pop(0)
-        if re.fullmatch(r"[1-9][0-9]*", attempts) is None:
+        if not is_positive_integer(attempts):
             _fail_parse("pid: ATTEMPTS must be a positive integer", usage)
         max_attempts = int(attempts)
 

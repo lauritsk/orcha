@@ -415,7 +415,7 @@ class PIDFlow:
     def handle_step_result(result: StepResult) -> None:
         """Apply a step or hook result."""
 
-        if result.action == "continue" or result.action == "skip":
+        if result.action in {"continue", "skip"}:
             return
         if result.action == "stop":
             abort(result.code)

@@ -609,7 +609,7 @@ def _args_for_workflow_tests(args: list[str]) -> list[str]:
         if value in options_with_values:
             index += 2
             continue
-        if value.startswith("--config=") or value.startswith("--output="):
+        if value.startswith(("--config=", "--output=")):
             index += 1
             continue
         if value.startswith("-"):

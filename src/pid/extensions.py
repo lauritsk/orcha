@@ -163,11 +163,12 @@ class ExtensionRegistry:
     def replace_step(
         self, name: str, step: WorkflowStep | StepHandler, *, step_name: str = ""
     ) -> None:
-        """Replace a built-in step by name."""
+        """Replace a built-in step implementation while preserving its stable id."""
 
+        del step_name
         self._require_name(name, "step")
-        workflow_step = self._coerce_step(step, name=step_name or name)
-        self.replaced_steps[name] = workflow_step
+        workflow_step = self._coerce_step(step, name=name)
+        self.replaced_steps[name] = WorkflowStep(name, workflow_step.run)
 
     def disable_step(self, name: str) -> None:
         """Disable a built-in or extension-added step by name."""

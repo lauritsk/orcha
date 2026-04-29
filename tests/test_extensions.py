@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 from typer.testing import CliRunner
@@ -15,6 +16,16 @@ from pid.extensions import ExtensionError, ExtensionRegistry, StepResult, Workfl
 from pid.models import CommandResult
 from pid.workflow import PIDFlow, command_diagnostic
 from tests.fakes import assert_success, base_state, calls, run_pid
+
+
+def run_engine_step(flow: PIDFlow, context: Any, step: WorkflowStep) -> None:
+    flow.engine.execute_step(
+        context,
+        step,
+        flow.registry,
+        checkpoint=flow.apply_queued_followups,
+        current_step_callback=flow._set_current_step,
+    )
 
 
 DEMO_EXTENSION = "\n".join(
@@ -735,7 +746,7 @@ def test_invalid_extension_config_is_rejected(tmp_path: Path, capsys) -> None:
             raise AssertionError("expected config error")
 
 
-def test_pid_flow_step_runner_handles_extension_results_and_errors(
+def test_workflow_engine_handles_extension_results_and_errors(
     tmp_path: Path,
 ) -> None:
     from pid.commands import CommandRunner
@@ -757,14 +768,14 @@ def test_pid_flow_step_runner_handles_extension_results_and_errors(
     seen: list[str] = []
 
     flow.registry.disable_step("disabled")
-    flow.run_workflow_step(
-        context, WorkflowStep("disabled", lambda _ctx: seen.append("bad"))
+    run_engine_step(
+        flow, context, WorkflowStep("disabled", lambda _ctx: seen.append("bad"))
     )
     assert seen == []
 
     flow.registry.add_hook("before.skipped", lambda _ctx: StepResult.skip("skip it"))
-    flow.run_workflow_step(
-        context, WorkflowStep("skipped", lambda _ctx: seen.append("bad"))
+    run_engine_step(
+        flow, context, WorkflowStep("skipped", lambda _ctx: seen.append("bad"))
     )
     assert seen == []
 
@@ -774,17 +785,18 @@ def test_pid_flow_step_runner_handles_extension_results_and_errors(
         retries["count"] += 1
         return StepResult.retry("again") if retries["count"] == 1 else None
 
-    flow.run_workflow_step(context, WorkflowStep("retry_once", retry_once))
+    run_engine_step(flow, context, WorkflowStep("retry_once", retry_once))
     assert retries["count"] == 2
 
     flow.registry.add_hook("after.after_stop", lambda _ctx: StepResult.stop(6))
     with pytest.raises(PIDAbort) as stop_info:
-        flow.run_workflow_step(context, WorkflowStep("after_stop", lambda _ctx: None))
+        run_engine_step(flow, context, WorkflowStep("after_stop", lambda _ctx: None))
     assert stop_info.value.code == 6
 
     flow.registry.add_hook("error.failing", lambda _ctx: seen.append("error hook"))
     with pytest.raises(ValueError):
-        flow.run_workflow_step(
+        run_engine_step(
+            flow,
             context,
             WorkflowStep(
                 "failing", lambda _ctx: (_ for _ in ()).throw(ValueError("boom"))
@@ -793,23 +805,25 @@ def test_pid_flow_step_runner_handles_extension_results_and_errors(
     assert "error hook" in seen
 
     with pytest.raises(PIDAbort) as retry_limit_info:
-        flow.run_workflow_step(
-            context, WorkflowStep("retry_forever", lambda _ctx: StepResult.retry())
+        run_engine_step(
+            flow,
+            context,
+            WorkflowStep("retry_forever", lambda _ctx: StepResult.retry()),
         )
     assert retry_limit_info.value.code == 1
 
     with pytest.raises(ExtensionError, match="StepResult or None"):
-        flow.run_workflow_step(context, WorkflowStep("bad_result", lambda _ctx: 42))
+        run_engine_step(flow, context, WorkflowStep("bad_result", lambda _ctx: 42))
 
     flow.registry.add_hook("before.bad_hook_result", lambda _ctx: "bad")
     with pytest.raises(ExtensionError, match="StepResult or None"):
-        flow.run_workflow_step(
-            context, WorkflowStep("bad_hook_result", lambda _ctx: None)
+        run_engine_step(
+            flow, context, WorkflowStep("bad_hook_result", lambda _ctx: None)
         )
 
-    flow.handle_step_result(StepResult.retry())
+    flow.engine.handle_step_result(StepResult.retry())
     with pytest.raises(ExtensionError):
-        flow.handle_step_result(StepResult("unknown"))
+        flow.engine.handle_step_result(StepResult("unknown"))
 
 
 def test_pid_flow_applies_service_replacements(tmp_path: Path) -> None:

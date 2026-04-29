@@ -84,6 +84,7 @@ options explicitly:
 pid agent
 pid agent --branch feature/add-docs --prompt "add project documentation"
 pid agent follow-up <run-id> --message "Use the new API name everywhere"
+pid agent resume <run-id>
 pid agent runs
 pid agent status <run-id>
 ```
@@ -134,6 +135,7 @@ pid [OPTIONS] orchestrator|o [start] --goal TEXT [--plan-file plan.json]
 pid [OPTIONS] run [ATTEMPTS] [THINKING] BRANCH PROMPT...
 pid [OPTIONS] session [ATTEMPTS] [THINKING] BRANCH [PROMPT...]
 pid agent [start] --branch BRANCH --prompt TEXT [--attempts N] [--thinking LEVEL]
+pid agent resume RUN_ID
 pid agent follow-up RUN_ID --message TEXT [--type TYPE]
 pid agent status RUN_ID
 pid agent runs
@@ -172,6 +174,7 @@ pid --version
 | `pid init` | Write recommended defaults to the platform config path. Refuses to overwrite an existing file. |
 | `pid agent`, `pid agent start` | Run supervised workflow mode. Stores state and per-step workflow outcomes under the git common dir by default. In a TTY, missing startup options are prompted. |
 | `pid agent follow-up RUN_ID` | Queue a durable follow-up for a supervised run. Valid types are `clarify`, `scope_change`, `pause`, and `abort`. Running children apply it at the next safe checkpoint. |
+| `pid agent resume RUN_ID` | Resume a stored supervised run only before any workflow step has started. Runs with durable step history fail clearly because mid-workflow context hydration is not implemented. |
 | `pid agent status RUN_ID` | Show current step, status, PR URL, failure, and follow-up counts for a run. |
 | `pid agent runs` | List recent supervised runs. |
 | `pid orchestrator`, `pid orchestrator start`, `pid o` | Create a larger-run coordinator. In a TTY, missing startup options and no-plan intake answers are prompted. Without `--plan-file` in non-interactive mode, prints intake questions; with a plan, creates child runs and launches ready children. |
@@ -275,9 +278,10 @@ When `store_dir` is empty, `pid agent` writes under
 `<git-common-dir>/pid/runs/`, outside the worktree. Run directories and state
 files are created with user-private permissions where supported. Supervised runs
 persist each workflow step start, success, skip, retry, or failure under the
-run's `workflow.steps` state. This is the durable foundation for future
-`pid agent resume <run-id>` support; today, operators can inspect or reconcile
-stored state but full in-process step resume is not exposed as a CLI command.
+run's `workflow.steps` state. `pid agent resume <run-id>` reuses the stored
+argv/config/run store only when no workflow step has started yet. Resuming after
+bootstrap, worktree creation, agent execution, pauses, or failures is rejected
+with a clear message because full context hydration is not implemented.
 
 Configure any project setup or harness trust command with `setup_command`.
 The default is `["mise", "trust", "."]` and is skipped when `mise` is not on

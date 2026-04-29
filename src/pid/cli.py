@@ -62,6 +62,7 @@ Advanced:
 AGENT_USAGE = (
     "usage: pid agent|a [start] --branch BRANCH --prompt TEXT [--attempts N] "
     "[--thinking LEVEL]\n"
+    "       pid agent resume RUN_ID\n"
     "       pid agent follow-up|status|runs ..."
 )
 ORCHESTRATOR_USAGE = (
@@ -293,7 +294,7 @@ def main(
 
     Info commands:
 
-    - pid agent|a start|follow-up|status|runs
+    - pid agent|a start|resume|follow-up|status|runs
     - pid orchestrator|o start|follow-up|status|runs
     - pid run BRANCH PROMPT...
     - pid session BRANCH [PROMPT...]
@@ -476,6 +477,24 @@ def _run_agent_command(
             return 2
         echo_out(f"pid: queued follow-up {record['id']} for run {run_id}")
         return 0
+    if command == "resume":
+        if len(raw_args) != 2:
+            echo_err("usage: pid agent resume RUN_ID")
+            return 2
+        try:
+            agent = OrchestratorAgent(
+                config=config,
+                store=store,
+                output_mode=output_mode,
+            )
+            result = agent.resume(raw_args[1])
+        except (OSError, ValueError) as error:
+            echo_err(f"pid: could not resume run: {error}")
+            return 2
+        echo_out(f"pid: agent run {result.run_id}: {result.state['status']}")
+        if result.state.get("pr_url"):
+            echo_out(f"pid: PR: {result.state['pr_url']}")
+        return result.exit_code
     if command != "start":
         echo_err(f"pid: unknown agent command: {command}")
         echo_err(AGENT_USAGE)

@@ -57,7 +57,6 @@ from pid.utils import (
     has_output,
     review_display_target_for,
     review_target_for,
-    workflow_step_label,
     worktree_path_for,
 )
 from pid.workflow_steps import BOOTSTRAP_STEP_IDS, DEFAULT_STEP_IDS, PR_LOOP_STEP_IDS
@@ -187,7 +186,13 @@ class PIDFlow:
         try:
             bootstrap_steps = self.bootstrap_steps()
             for step in bootstrap_steps:
-                self.run_workflow_step(ctx, step)
+                self.engine.execute_step(
+                    ctx,
+                    step,
+                    self.registry,
+                    checkpoint=self.apply_queued_followups,
+                    current_step_callback=self._set_current_step,
+                )
             self.load_project_extensions(ctx)
             self.apply_service_replacements(ctx)
             for step in self.registry.resolve_steps(
@@ -195,7 +200,13 @@ class PIDFlow:
                 known_steps=(step.name for step in bootstrap_steps),
                 external_steps=self.pr_loop_step_names(),
             ):
-                self.run_workflow_step(ctx, step)
+                self.engine.execute_step(
+                    ctx,
+                    step,
+                    self.registry,
+                    checkpoint=self.apply_queued_followups,
+                    current_step_callback=self._set_current_step,
+                )
             ctx.emit("workflow.completed")
         except Exception as error:
             ctx.emit(
@@ -233,91 +244,10 @@ class PIDFlow:
             for step_id in step_ids
         ]
 
-    def run_workflow_step(self, ctx: WorkflowContext, step: WorkflowStep) -> None:
-        """Run one durable step with hooks, events, replacements, and retry."""
+    def _set_current_step(self, step_name: str) -> None:
+        """Project engine current-step state onto supervised run state."""
 
-        if step.name in self.registry.disabled_steps:
-            return
-        step = self.registry.replaced_steps.get(step.name, step)
-        retries = 0
-        while True:
-            self.current_step = step.name
-            self.engine.start_step(step.name)
-            try:
-                self.apply_queued_followups(ctx, step.name)
-                ctx.emit("step.started", step=step.name)
-                before_result = self.registry.run_hooks(f"before.{step.name}", ctx)
-                if before_result.action == "skip":
-                    self.engine.complete_step(
-                        step.name,
-                        status="skipped",
-                        outcome=self._step_result_outcome(before_result),
-                    )
-                    ctx.emit(
-                        "step.skipped", step=step.name, message=before_result.reason
-                    )
-                    self.current_step = ""
-                    return
-                self.handle_step_result(before_result)
-            except Exception as error:
-                self.engine.fail_step(step.name, error)
-                raise
-
-            try:
-                result = normalize_step_result(step.run(ctx))
-            except Exception as error:
-                ctx.emit(
-                    "step.failed",
-                    step=step.name,
-                    level="error",
-                    fields={"error": f"{type(error).__name__}: {error}"},
-                )
-                self.engine.fail_step(step.name, error)
-                error_result = self.registry.run_hooks(f"error.{step.name}", ctx)
-                if error_result.action != "continue":
-                    self.handle_step_result(error_result)
-                raise
-
-            try:
-                after_result = self.registry.run_hooks(f"after.{step.name}", ctx)
-                if after_result.action != "continue":
-                    result = after_result
-                if result.action == "retry":
-                    retries += 1
-                    self.engine.complete_step(
-                        step.name,
-                        status="retrying",
-                        outcome=self._step_result_outcome(result),
-                    )
-                    if retries > 3:
-                        echo_err(
-                            "pid: step retry limit reached: "
-                            f"{workflow_step_label(step.name)}"
-                        )
-                        abort(1)
-                    ctx.emit("step.retrying", step=step.name, message=result.reason)
-                    continue
-                self.handle_step_result(result)
-                self.engine.complete_step(
-                    step.name,
-                    outcome=self._step_result_outcome(result),
-                )
-                ctx.emit("step.completed", step=step.name)
-                self.current_step = ""
-                return
-            except Exception as error:
-                self.engine.fail_step(step.name, error)
-                raise
-
-    @staticmethod
-    def _step_result_outcome(result: StepResult) -> dict[str, object]:
-        """Return persisted, stable step result fields."""
-
-        return {
-            "action": result.action,
-            "code": result.code,
-            "reason": result.reason,
-        }
+        self.current_step = step_name
 
     def apply_queued_followups(self, ctx: WorkflowContext, step_name: str) -> None:
         """Apply durable run follow-ups at safe workflow checkpoints."""
@@ -406,18 +336,6 @@ class PIDFlow:
             )
         lines.append("</pid-followups>")
         return prompt + "\n" + "\n".join(lines)
-
-    @staticmethod
-    def handle_step_result(result: StepResult) -> None:
-        """Apply a step or hook result."""
-
-        if result.action in {"continue", "skip"}:
-            return
-        if result.action == "stop":
-            abort(result.code)
-        if result.action == "retry":
-            return
-        raise ExtensionError(f"unknown step result action: {result.action}")
 
     def load_project_extensions(self, ctx: WorkflowContext) -> None:
         """Load configured project-local extensions after repo resolution."""
@@ -786,7 +704,13 @@ class PIDFlow:
             ctx.checks_status = 0
             ctx.checks_output = ""
             for step in pr_loop_steps:
-                self.run_workflow_step(ctx, step)
+                self.engine.execute_step(
+                    ctx,
+                    step,
+                    self.registry,
+                    checkpoint=self.apply_queued_followups,
+                    current_step_callback=self._set_current_step,
+                )
                 if ctx.pr_loop.completed:
                     return
                 if ctx.pr_loop.next_iteration:
@@ -830,7 +754,7 @@ class PIDFlow:
             raise ExtensionError(
                 f"policy {name} failed: {type(error).__name__}: {error}"
             ) from error
-        self.handle_step_result(result)
+        WorkflowEngine.handle_step_result(result)
 
     def step_pr_prepare_attempt(self, ctx: WorkflowContext) -> None:
         parsed = ctx.require_parsed()
@@ -919,11 +843,19 @@ class PIDFlow:
         )
         self.regenerate_context_message(ctx)
         ctx.pr_loop.need_force_push = True
-        self.run_workflow_step(
-            ctx, WorkflowStep("pr_push_branch", self.step_pr_push_branch)
+        self.engine.execute_step(
+            ctx,
+            WorkflowStep("pr_push_branch", self.step_pr_push_branch),
+            self.registry,
+            checkpoint=self.apply_queued_followups,
+            current_step_callback=self._set_current_step,
         )
-        self.run_workflow_step(
-            ctx, WorkflowStep("pr_ensure_pr", self.step_pr_ensure_pr)
+        self.engine.execute_step(
+            ctx,
+            WorkflowStep("pr_ensure_pr", self.step_pr_ensure_pr),
+            self.registry,
+            checkpoint=self.apply_queued_followups,
+            current_step_callback=self._set_current_step,
         )
         ctx.merge_retries = 0
         ctx.pr_loop.next_iteration = True

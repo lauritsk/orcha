@@ -135,7 +135,31 @@ class OrchestratorAgent:
             status="running",
             extra={"thinking": options.thinking or self.config.agent.default_thinking},
         )
-        run_id = str(state["run_id"])
+        return self._run_existing(str(state["run_id"]), argv)
+
+    def resume(self, run_id: str) -> AgentRunResult:
+        """Resume a persisted agent run at a supported safe boundary."""
+
+        state = self.store.read_state(run_id)
+        if state.get("run_type") != "agent":
+            raise ValueError(f"run is not an agent run: {run_id}")
+        argv = state.get("argv")
+        if not isinstance(argv, list) or not all(isinstance(arg, str) for arg in argv):
+            raise ValueError(f"run cannot be resumed because argv is missing: {run_id}")
+        workflow = state.get("workflow")
+        history = workflow.get("history", []) if isinstance(workflow, dict) else []
+        if history:
+            raise ValueError(
+                "pid agent resume is only supported before any workflow step has "
+                "started; this run already has durable step history"
+            )
+        state["status"] = "running"
+        self.store.write_state(run_id, state)
+        return self._run_existing(run_id, [str(arg) for arg in argv])
+
+    def _run_existing(self, run_id: str, argv: list[str]) -> AgentRunResult:
+        """Run a supervised PIDFlow for an existing durable run."""
+
         flow = PIDFlow(
             config=self.config,
             output_mode=self.output_mode,
@@ -693,13 +717,17 @@ def launch_ready_children(
 ) -> list[dict[str, Any]]:
     """Launch dependency-free child runs as parallel pid subprocesses."""
 
-    launched = 0
+    active = sum(
+        1 for child in children if child.get("status") in ACTIVE_CHILD_STATUSES
+    )
     for child in children:
+        if child.get("status") in ACTIVE_CHILD_STATUSES:
+            continue
         if child.get("dependencies"):
             child["status"] = "blocked"
             child["blocked_reason"] = "waiting for dependencies"
             continue
-        if launched >= concurrency:
+        if active >= concurrency:
             child["status"] = "queued"
             continue
         launch_child(
@@ -708,13 +736,13 @@ def launch_ready_children(
             config_path=config_path,
             default_thinking=default_thinking,
         )
-        launched += 1
+        active += 1
     return children
 
 
 SUCCESS_CHILD_STATUSES = {"succeeded", "no_changes"}
 FAILED_CHILD_STATUSES = {"failed", "aborted"}
-ACTIVE_CHILD_STATUSES = {"launched", "running"}
+ACTIVE_CHILD_STATUSES = {"active", "launched", "running"}
 PENDING_CHILD_STATUSES = {"planned", "queued", "blocked"}
 
 

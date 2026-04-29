@@ -26,6 +26,7 @@ from pid.forge import Forge
 from pid.failures import FailureKind, WorkflowFailure, failure_from_abort
 from pid.models import CommandResult, OutputMode
 from pid.orchestrator import (
+    AgentRunResult,
     AgentStartOptions,
     OrchestratorAgent,
     OrchestratorDisabled,
@@ -208,6 +209,76 @@ def test_agent_start_records_typed_failure(tmp_path: Path) -> None:
     assert state["pending_recovery_action"]["kind"] == "abort"
 
 
+def test_agent_resume_rehydrates_argv_at_empty_boundary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = RunStore(tmp_path / "runs")
+    state = store.create_run(
+        branch="feature/resume",
+        prompt="prompt",
+        argv=["feature/resume", "prompt"],
+        status="paused",
+    )
+    run_id = str(state["run_id"])
+    config = PIDConfig(orchestrator=OrchestratorConfig(store_dir=str(store.root)))
+    seen: list[tuple[str, list[str]]] = []
+
+    def fake_run_existing(
+        self: OrchestratorAgent, resumed_run_id: str, argv: list[str]
+    ) -> AgentRunResult:
+        del self
+        seen.append((resumed_run_id, argv))
+        return AgentRunResult(resumed_run_id, store.read_state(resumed_run_id), 0)
+
+    monkeypatch.setattr(OrchestratorAgent, "_run_existing", fake_run_existing)
+
+    result = OrchestratorAgent(config=config, store=store).resume(run_id)
+
+    assert result.exit_code == 0
+    assert seen == [(run_id, ["feature/resume", "prompt"])]
+    assert store.read_state(run_id)["status"] == "running"
+
+
+def test_agent_resume_rejects_invalid_state(tmp_path: Path) -> None:
+    store = RunStore(tmp_path / "runs")
+    config = PIDConfig(orchestrator=OrchestratorConfig(store_dir=str(store.root)))
+    orchestrator = OrchestratorAgent(config=config, store=store)
+    orch_state = store.create_orchestrator_run(goal="goal", questions=[])
+    run_state = store.create_run(branch="feature/bad", prompt="prompt", argv=[])
+    run_id = str(run_state["run_id"])
+    state = store.read_state(run_id)
+    state["argv"] = "not argv"
+    store.write_state(run_id, state)
+
+    with pytest.raises(ValueError, match="not an agent run"):
+        orchestrator.resume(str(orch_state["run_id"]))
+    with pytest.raises(ValueError, match="argv is missing"):
+        orchestrator.resume(run_id)
+
+
+def test_agent_resume_rejects_runs_with_step_history(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    store = RunStore(tmp_path / "runs")
+    state = store.create_run(
+        branch="feature/resume",
+        prompt="prompt",
+        argv=["feature/resume", "prompt"],
+    )
+    run_id = str(state["run_id"])
+    store.record_step_started(run_id, "parse_args")
+    config = PIDConfig(orchestrator=OrchestratorConfig(store_dir=str(store.root)))
+
+    code = _run_agent_command(
+        ["resume", run_id], config=config, output_mode=OutputMode.NORMAL
+    )
+
+    assert code == 2
+    assert (
+        "only supported before any workflow step has started" in capsys.readouterr().err
+    )
+
+
 def test_workflow_engine_persists_step_start_end_and_failure(tmp_path: Path) -> None:
     store = RunStore(tmp_path / "runs")
     state = store.create_run(branch="feature/step", prompt="prompt", argv=[])
@@ -219,7 +290,13 @@ def test_workflow_engine_persists_step_start_end_and_failure(tmp_path: Path) -> 
         SimpleNamespace(scratch={}, emit=lambda *_args, **_kwargs: None),
     )
 
-    flow.run_workflow_step(ctx, WorkflowStep("extra_step", lambda _ctx: None))
+    flow.engine.execute_step(
+        ctx,
+        WorkflowStep("extra_step", lambda _ctx: None),
+        flow.registry,
+        checkpoint=flow.apply_queued_followups,
+        current_step_callback=flow._set_current_step,
+    )
 
     state = store.read_state(run_id)
     step_state = state["workflow"]["steps"]["extra_step"]
@@ -231,7 +308,13 @@ def test_workflow_engine_persists_step_start_end_and_failure(tmp_path: Path) -> 
         raise RuntimeError("boom")
 
     with pytest.raises(RuntimeError, match="boom"):
-        flow.run_workflow_step(ctx, WorkflowStep("bad_step", fail_step))
+        flow.engine.execute_step(
+            ctx,
+            WorkflowStep("bad_step", fail_step),
+            flow.registry,
+            checkpoint=flow.apply_queued_followups,
+            current_step_callback=flow._set_current_step,
+        )
 
     state = store.read_state(run_id)
     failed = state["workflow"]["steps"]["bad_step"]
@@ -862,6 +945,14 @@ def test_launch_ready_children_helper_marks_queue_and_blocked(
 
     children = [
         {
+            "item_id": "active",
+            "status": "active",
+            "child_run_id": "20260429T010101000Z-abcdef",
+            "branch": "feat/active",
+            "prompt": "prompt",
+            "thinking": "medium",
+        },
+        {
             "item_id": "one",
             "child_run_id": "20260429T010101001Z-abcdef",
             "branch": "feat/one",
@@ -891,13 +982,14 @@ def test_launch_ready_children_helper_marks_queue_and_blocked(
         parent_run_id="parent",
         config_path=None,
         default_thinking="medium",
-        concurrency=1,
+        concurrency=2,
     )
 
-    assert children[0]["status"] == "launched"
-    assert children[1]["status"] == "queued"
-    assert children[2]["status"] == "blocked"
-    assert children[2]["blocked_reason"] == "waiting for dependencies"
+    assert children[0]["status"] == "active"
+    assert children[1]["status"] == "launched"
+    assert children[2]["status"] == "queued"
+    assert children[3]["status"] == "blocked"
+    assert children[3]["blocked_reason"] == "waiting for dependencies"
     assert len(launched) == 1
 
 

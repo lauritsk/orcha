@@ -17,9 +17,20 @@ from pid.events import EventSink, WorkflowEvent
 from pid.failures import WorkflowFailure
 
 _RUN_ID_RE = re.compile(r"^[0-9]{8}T[0-9]{6}[0-9]{3}Z-[0-9a-f]{6}$")
+_FOLLOWUP_ID_RE = re.compile(r"^fu-(?P<sequence>[0-9]{6})$")
 _SECRET_PATTERNS = (
     re.compile(r"(?i)(token|secret|password|api[_-]?key)=([^\s]+)"),
     re.compile(r"(?i)(authorization:\s*bearer\s+)([^\s]+)"),
+)
+FOLLOWUP_KINDS = (
+    "clarify",
+    "scope_change",
+    "pause",
+    "resume",
+    "abort",
+    "rerun",
+    "merge_policy",
+    "status_request",
 )
 
 
@@ -34,6 +45,12 @@ def generate_run_id() -> str:
 
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%f")[:18] + "Z"
     return f"{stamp}-{secrets.token_hex(3)}"
+
+
+def valid_run_id(run_id: str) -> bool:
+    """Return whether value is a syntactically valid run ID."""
+
+    return bool(_RUN_ID_RE.fullmatch(run_id))
 
 
 def redact(value: Any) -> Any:
@@ -60,11 +77,12 @@ class RunPaths:
     directory: Path
     state: Path
     events: Path
+    followups: Path
     diagnostics: Path
 
 
 class RunStore:
-    """Durable JSON/JSONL store for orchestrator runs."""
+    """Durable JSON/JSONL store for orchestrator and child runs."""
 
     def __init__(self, root: Path) -> None:
         self.root = root
@@ -89,29 +107,65 @@ class RunStore:
     def paths(self, run_id: str) -> RunPaths:
         """Return paths for run ID."""
 
-        if not _RUN_ID_RE.fullmatch(run_id):
+        if not valid_run_id(run_id):
             raise ValueError(f"invalid run id: {run_id}")
         directory = self.root / run_id
         return RunPaths(
             directory=directory,
             state=directory / "state.json",
             events=directory / "events.jsonl",
+            followups=directory / "followups.jsonl",
             diagnostics=directory / "diagnostics",
         )
 
     def create_run(
-        self, *, branch: str, prompt: str, argv: list[str]
+        self,
+        *,
+        branch: str,
+        prompt: str,
+        argv: list[str],
+        run_id: str = "",
+        parent_run_id: str = "",
+        plan_item_id: str = "",
+        status: str = "running",
+        extra: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Create and persist initial run state."""
+        """Create and persist initial child run state.
 
-        run_id = generate_run_id()
+        If a planned state already exists for ``run_id``, update launch metadata but
+        preserve queued follow-ups so orchestrators can steer future waves before
+        the child process starts.
+        """
+
+        run_id = run_id or generate_run_id()
         paths = self.paths(run_id)
+        if paths.state.exists():
+            state = self.read_state(run_id)
+            state.update(
+                {
+                    "run_type": "agent",
+                    "status": status,
+                    "branch": branch,
+                    "prompt_summary": prompt_summary(prompt),
+                    "argv": argv,
+                    "parent_run_id": parent_run_id or state.get("parent_run_id", ""),
+                    "plan_item_id": plan_item_id or state.get("plan_item_id", ""),
+                }
+            )
+            if extra:
+                state.update(extra)
+            self.write_state(run_id, state)
+            return state
+
         _ensure_private_dir(paths.directory, exist_ok=False)
         _ensure_private_dir(paths.diagnostics)
         now = utc_now()
         state: dict[str, Any] = {
             "run_id": run_id,
-            "status": "running",
+            "run_type": "agent",
+            "parent_run_id": parent_run_id,
+            "plan_item_id": plan_item_id,
+            "status": status,
             "branch": branch,
             "prompt_summary": prompt_summary(prompt),
             "argv": argv,
@@ -126,6 +180,53 @@ class RunStore:
             "last_failure": None,
             "pending_recovery_action": None,
             "event_count": 0,
+            "follow_up_count": 0,
+            "applied_follow_up_count": 0,
+            "last_follow_up_id": "",
+            "last_applied_follow_up_id": "",
+        }
+        if extra:
+            state.update(extra)
+        self.write_state(run_id, state)
+        return state
+
+    def create_orchestrator_run(
+        self,
+        *,
+        goal: str,
+        questions: list[str],
+        plan: dict[str, Any] | None = None,
+        children: list[dict[str, Any]] | None = None,
+        status: str = "awaiting_plan",
+        branch_prefix: str = "work",
+        concurrency: int = 4,
+    ) -> dict[str, Any]:
+        """Create and persist an orchestrator run state."""
+
+        run_id = generate_run_id()
+        paths = self.paths(run_id)
+        _ensure_private_dir(paths.directory, exist_ok=False)
+        _ensure_private_dir(paths.diagnostics)
+        now = utc_now()
+        state: dict[str, Any] = {
+            "run_id": run_id,
+            "run_type": "orchestrator",
+            "status": status,
+            "goal": goal,
+            "branch_prefix": branch_prefix,
+            "concurrency": concurrency,
+            "intake_questions": questions,
+            "approved_plan": plan,
+            "children": children or [],
+            "followups": [],
+            "started_at": now,
+            "updated_at": now,
+            "final_result": "",
+            "event_count": 0,
+            "follow_up_count": 0,
+            "applied_follow_up_count": 0,
+            "last_follow_up_id": "",
+            "last_applied_follow_up_id": "",
         }
         self.write_state(run_id, state)
         return state
@@ -172,6 +273,114 @@ class RunStore:
         project_event(state, event)
         self.write_state(run_id, state)
         return state
+
+    def append_followup(
+        self,
+        run_id: str,
+        *,
+        message: str,
+        kind: str = "clarify",
+        source: str = "user",
+        sender_run_id: str = "",
+    ) -> dict[str, Any]:
+        """Append a durable follow-up message to a run inbox."""
+
+        if kind not in FOLLOWUP_KINDS:
+            valid = ", ".join(FOLLOWUP_KINDS)
+            raise ValueError(f"follow-up type must be one of: {valid}")
+        message = message.strip()
+        if not message:
+            raise ValueError("follow-up message must be non-empty")
+
+        state = self.read_state(run_id)
+        sequence = int(state.get("follow_up_count", 0)) + 1
+        followup_id = f"fu-{sequence:06d}"
+        record = redact(
+            {
+                "record": "followup",
+                "id": followup_id,
+                "sequence": sequence,
+                "run_id": run_id,
+                "kind": kind,
+                "source": source,
+                "sender_run_id": sender_run_id,
+                "message": message,
+                "created_at": utc_now(),
+            }
+        )
+        self._append_followup_record(run_id, record)
+        state["follow_up_count"] = sequence
+        state["last_follow_up_id"] = followup_id
+        self.write_state(run_id, state)
+        return record
+
+    def pending_followups(self, run_id: str) -> list[dict[str, Any]]:
+        """Return follow-ups not yet acknowledged by the child run."""
+
+        state = self.read_state(run_id)
+        applied = int(state.get("applied_follow_up_count", 0))
+        records = self._read_followup_records(run_id)
+        return [
+            record
+            for record in records
+            if record.get("record") == "followup"
+            and int(record.get("sequence", 0)) > applied
+        ]
+
+    def ack_followup(
+        self,
+        run_id: str,
+        followup_id: str,
+        *,
+        step: str,
+        status: str = "applied",
+        note: str = "",
+    ) -> dict[str, Any]:
+        """Persist an acknowledgement for one follow-up."""
+
+        sequence = followup_sequence(followup_id)
+        state = self.read_state(run_id)
+        current = int(state.get("applied_follow_up_count", 0))
+        state["applied_follow_up_count"] = max(current, sequence)
+        state["last_applied_follow_up_id"] = followup_id
+        ack = redact(
+            {
+                "record": "ack",
+                "id": followup_id,
+                "sequence": sequence,
+                "run_id": run_id,
+                "status": status,
+                "step": step,
+                "note": note,
+                "created_at": utc_now(),
+            }
+        )
+        self._append_followup_record(run_id, ack)
+        self.write_state(run_id, state)
+        return ack
+
+    def _append_followup_record(self, run_id: str, record: dict[str, Any]) -> None:
+        paths = self.paths(run_id)
+        _ensure_private_dir(paths.directory)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
+        file_descriptor = os.open(paths.followups, flags, 0o600)
+        with os.fdopen(file_descriptor, "a", encoding="utf-8") as stream:
+            stream.write(json.dumps(record, sort_keys=True, default=str) + "\n")
+        _chmod_if_supported(paths.followups, 0o600)
+
+    def _read_followup_records(self, run_id: str) -> list[dict[str, Any]]:
+        path = self.paths(run_id).followups
+        if not path.exists():
+            return []
+        records: list[dict[str, Any]] = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            try:
+                value = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(value, dict):
+                records.append(value)
+        return records
 
     def update_from_context(
         self, run_id: str, ctx: WorkflowContext | None
@@ -240,6 +449,15 @@ class RunStore:
             if len(states) >= limit:
                 break
         return states
+
+
+def followup_sequence(followup_id: str) -> int:
+    """Return numeric sequence for a follow-up ID."""
+
+    match = _FOLLOWUP_ID_RE.fullmatch(followup_id)
+    if match is None:
+        raise ValueError(f"invalid follow-up id: {followup_id}")
+    return int(match.group("sequence"))
 
 
 def _ensure_private_dir(path: Path, *, exist_ok: bool = True) -> None:

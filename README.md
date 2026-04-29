@@ -19,6 +19,10 @@ squash-merges the PR, and cleans up.
   forge CLI (`gh` by default).
 - Handles CI failure follow-ups and moved-base rebase retries.
 - Offers opt-in `pid agent` supervision with durable run state and typed failures.
+- Queues durable follow-ups to supervised runs and applies them at safe
+  checkpoints.
+- Starts orchestrator runs that ask intake questions, persist plans, and launch
+  child pid agent sessions in parallel waves.
 - Lists active and historical pid sessions.
 - Supports workflow extensions under `pid x ...`.
 - Optionally keeps the screen awake on macOS while pid runs.
@@ -80,8 +84,20 @@ Or start supervised agent mode with durable run state:
 
 ```sh
 pid agent start --branch feature/add-docs --prompt "add project documentation"
+pid agent follow-up <run-id> --message "Use the new API name everywhere"
 pid agent runs
 pid agent status <run-id>
+```
+
+Start an orchestrator run. Without a plan file it prints intake questions to
+answer before child launch; with an approved JSON plan it creates child run
+records and launches dependency-free children in parallel unless `--dry-run` is
+set:
+
+```sh
+pid orchestrator start --goal "ship the larger change"
+pid orchestrator start --goal "ship the larger change" --plan-file plan.json
+pid orchestrator follow-up <run-id> --target api --message "Rename endpoint to /v2/tasks"
 ```
 
 Run an interactive agent session and let pid resume after the session exits:
@@ -106,9 +122,14 @@ pid [OPTIONS] [ATTEMPTS] [THINKING] BRANCH PROMPT...
 pid [OPTIONS] run [ATTEMPTS] [THINKING] BRANCH PROMPT...
 pid [OPTIONS] session [ATTEMPTS] [THINKING] BRANCH [PROMPT...]
 pid agent start --branch BRANCH --prompt TEXT [--attempts N] [--thinking LEVEL]
+pid agent follow-up RUN_ID --message TEXT [--type TYPE]
 pid agent status RUN_ID
 pid agent runs
 pid agent resume RUN_ID
+pid orchestrator start --goal TEXT [--plan-file plan.json] [--dry-run]
+pid orchestrator follow-up RUN_ID --message TEXT [--target ITEM|--all]
+pid orchestrator status RUN_ID
+pid orchestrator runs
 pid init
 pid sessions [--all|-a]
 pid config show|default|path
@@ -138,9 +159,14 @@ pid --version
 | `--output all` | Show successful output from every captured command. Full logs are always written to the session log. |
 | `pid init` | Write recommended defaults to the platform config path. Refuses to overwrite an existing file. |
 | `pid agent start` | Run supervised workflow mode. Stores state under the git common dir by default. |
-| `pid agent status RUN_ID` | Show current step, status, PR URL, and failure for a run. |
+| `pid agent follow-up RUN_ID` | Queue a durable follow-up for a supervised run. Running children apply it at the next safe checkpoint. |
+| `pid agent status RUN_ID` | Show current step, status, PR URL, failure, and follow-up counts for a run. |
 | `pid agent runs` | List recent supervised runs. |
 | `pid agent resume RUN_ID` | Reserved for resumable recovery; currently reports saved state and exits with guidance. |
+| `pid orchestrator start` | Create a larger-run coordinator. Without `--plan-file`, prints intake questions; with a plan, creates child runs and launches ready children. |
+| `pid orchestrator follow-up RUN_ID` | Record a global follow-up or route it to child run inboxes with `--target` or `--all`. |
+| `pid orchestrator status RUN_ID` | Show orchestrator status and child run IDs/statuses. |
+| `pid orchestrator runs` | List recent orchestrator runs. |
 | `pid sessions` | List active pid sessions from session logs. |
 | `pid sessions --all`, `-a` | Include stale and completed sessions. |
 | `pid config show` | Print the loaded config as TOML. Honors `--config PATH`. |
@@ -152,6 +178,16 @@ pid --version
 
 When stdin is a TTY, pid prompts for missing values before starting. In
 non-interactive shells, missing required arguments fail instead of blocking.
+
+### Orchestrator plan files
+
+`pid orchestrator start --plan-file plan.json` expects JSON with an `items`
+array and optional `constraints` array. Each item may set `id`, `title`,
+`scope`, `acceptance`, `validation`, `dependencies`, `branch`, `thinking`, and
+`prompt`. Missing branch names use `<prefix>/<item-id>-<slug>`. Missing thinking
+levels are chosen from configured agent levels using item risk and complexity.
+Missing prompts are built from the global goal, constraints, item scope,
+dependencies, acceptance criteria, and validation commands.
 
 ## How pid works
 

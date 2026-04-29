@@ -2,22 +2,46 @@ from __future__ import annotations
 
 import json
 import stat
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
 
 import pytest
 
-from pid.cli import _parse_agent_start, _run_agent_command, _run_status, _runs_table
+from pid.cli import (
+    _parse_agent_start,
+    _run_agent_command,
+    _orchestrator_status,
+    _run_orchestrator_command,
+    _run_status,
+    _runs_table,
+)
 from pid.commands import CommandRunner
 from pid.config import OrchestratorConfig, PIDConfig, parse_config
 from pid.context import WorkflowContext
 from pid.events import ListEventSink, WorkflowEvent
 from pid.extensions import ExtensionError
+from pid.github import Forge
 from pid.failures import FailureKind, WorkflowFailure, failure_from_abort
 from pid.models import CommandResult, OutputMode
-from pid.orchestrator import AgentStartOptions, OrchestratorAgent, workflow_argv
+from pid.orchestrator import (
+    AgentStartOptions,
+    OrchestratorAgent,
+    OrchestratorDisabled,
+    OrchestratorStartOptions,
+    OrchestratorSupervisor,
+    build_child_prompt,
+    build_child_records,
+    child_agent_command,
+    load_plan,
+    select_followup_targets,
+    select_thinking,
+    string_list,
+    workflow_argv,
+)
 from pid.policy import DeterministicRecoveryPolicy, RecoveryActionKind
+from pid.repository import Repository
 from pid.run_state import RunEventSink, RunStore, project_event
 from pid.workflow import PIDFlow
 from tests.fakes import assert_success, base_state, combined_output, run_pid
@@ -363,6 +387,516 @@ def test_failure_policy_and_orchestrator_helpers(tmp_path: Path) -> None:
     agent = OrchestratorAgent(config=PIDConfig(), store=RunStore(tmp_path / "runs"))
     with pytest.raises(ValueError, match="only deterministic"):
         agent.start(AgentStartOptions(branch="x", prompt="p", advisor="pi"))
+
+
+def test_agent_follow_up_cli_queues_message(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    store = RunStore(tmp_path / "runs")
+    state = store.create_run(branch="feature/f", prompt="prompt", argv=[])
+    run_id = str(state["run_id"])
+    config = PIDConfig(orchestrator=OrchestratorConfig(store_dir=str(store.root)))
+
+    code = _run_agent_command(
+        [
+            "follow-up",
+            run_id,
+            "--message",
+            "Use the new copy everywhere",
+            "--type",
+            "scope_change",
+        ],
+        config=config,
+        output_mode=OutputMode.NORMAL,
+    )
+
+    assert code == 0
+    pending = store.pending_followups(run_id)
+    assert pending[0]["id"] == "fu-000001"
+    assert pending[0]["kind"] == "scope_change"
+    assert pending[0]["message"] == "Use the new copy everywhere"
+    assert "queued follow-up fu-000001" in capsys.readouterr().out
+
+
+def test_workflow_applies_follow_up_at_safe_checkpoint(tmp_path: Path) -> None:
+    store = RunStore(tmp_path / "runs")
+    state = store.create_run(branch="feature/f", prompt="prompt", argv=[])
+    run_id = str(state["run_id"])
+    store.append_followup(run_id, message="Switch API name to v2")
+    flow = PIDFlow(load_extensions=False, run_store=store, run_id=run_id)
+    ctx = WorkflowContext(
+        argv=[],
+        config=PIDConfig(),
+        runner=CommandRunner(),
+        repository=Repository(CommandRunner()),
+        forge=Forge(CommandRunner(), PIDConfig().forge),
+        registry=flow.registry,
+        events=ListEventSink(),
+    )
+    flow.context = ctx
+
+    flow.apply_queued_followups(ctx, "run_initial_agent")
+
+    assert store.pending_followups(run_id) == []
+    assert store.read_state(run_id)["applied_follow_up_count"] == 1
+    assert "Switch API name to v2" in flow.prompt_with_followups("Base prompt")
+
+
+def test_workflow_pause_follow_up_stops_at_checkpoint(tmp_path: Path) -> None:
+    store = RunStore(tmp_path / "runs")
+    state = store.create_run(branch="feature/f", prompt="prompt", argv=[])
+    run_id = str(state["run_id"])
+    store.append_followup(run_id, message="Pause before PR", kind="pause")
+    flow = PIDFlow(load_extensions=False, run_store=store, run_id=run_id)
+    ctx = WorkflowContext(
+        argv=[],
+        config=PIDConfig(),
+        runner=CommandRunner(),
+        repository=Repository(CommandRunner()),
+        forge=Forge(CommandRunner(), PIDConfig().forge),
+        registry=flow.registry,
+        events=ListEventSink(),
+    )
+
+    with pytest.raises(WorkflowFailure) as caught:
+        flow.apply_queued_followups(ctx, "pr_push_branch")
+
+    assert caught.value.kind == FailureKind.FOLLOWUP_PAUSED
+    assert store.read_state(run_id)["last_applied_follow_up_id"] == "fu-000001"
+
+
+def test_orchestrator_start_without_plan_grills_user(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    store = RunStore(tmp_path / "runs")
+    config = PIDConfig(orchestrator=OrchestratorConfig(store_dir=str(store.root)))
+
+    code = _run_orchestrator_command(
+        ["start", "--goal", "Ship larger change"],
+        config=config,
+        output_mode=OutputMode.NORMAL,
+        config_path=None,
+    )
+
+    assert code == 0
+    state = store.list_runs()[0]
+    assert state["run_type"] == "orchestrator"
+    assert state["status"] == "awaiting_plan"
+    assert len(state["intake_questions"]) >= 10
+    assert "answer these intake questions" in capsys.readouterr().out
+
+
+def test_orchestrator_plan_dry_run_creates_child_runs_and_routes_follow_up(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    store = RunStore(tmp_path / "runs")
+    config = PIDConfig(orchestrator=OrchestratorConfig(store_dir=str(store.root)))
+    plan_path = tmp_path / "plan.json"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "constraints": ["Do not touch billing"],
+                "items": [
+                    {
+                        "id": "api",
+                        "title": "Add API workflow",
+                        "scope": "Change API orchestration code",
+                    },
+                    {
+                        "id": "docs",
+                        "title": "Update README docs",
+                        "scope": "Document CLI usage",
+                    },
+                ],
+            }
+        )
+    )
+
+    code = _run_orchestrator_command(
+        [
+            "start",
+            "--goal",
+            "Ship larger change",
+            "--plan-file",
+            str(plan_path),
+            "--branch-prefix",
+            "feat",
+            "--dry-run",
+        ],
+        config=config,
+        output_mode=OutputMode.NORMAL,
+        config_path=None,
+    )
+
+    assert code == 0
+    state = next(run for run in store.list_runs() if run["run_type"] == "orchestrator")
+    children = state["children"]
+    assert children[0]["branch"] == "feat/api-add-api-workflow"
+    assert children[0]["thinking"] == "high"
+    assert children[1]["thinking"] == "low"
+    child_run_id = children[0]["child_run_id"]
+    assert store.read_state(child_run_id)["status"] == "planned"
+
+    follow_code = _run_orchestrator_command(
+        [
+            "follow-up",
+            str(state["run_id"]),
+            "--message",
+            "Rename endpoint to /v2/tasks",
+            "--target",
+            "api",
+        ],
+        config=config,
+        output_mode=OutputMode.NORMAL,
+        config_path=None,
+    )
+
+    assert follow_code == 0
+    assert (
+        store.pending_followups(child_run_id)[0]["message"]
+        == "Rename endpoint to /v2/tasks"
+    )
+    assert "routed follow-up" in capsys.readouterr().out
+
+
+def test_orchestrator_cli_errors_and_recorded_follow_up(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    store = RunStore(tmp_path / "runs")
+    config = PIDConfig(orchestrator=OrchestratorConfig(store_dir=str(store.root)))
+    orch = store.create_orchestrator_run(
+        goal="goal", questions=["q?"], status="awaiting_plan"
+    )
+    run_id = str(orch["run_id"])
+
+    assert (
+        _run_orchestrator_command(
+            [], config=config, output_mode=OutputMode.NORMAL, config_path=None
+        )
+        == 0
+    )
+    assert (
+        _run_orchestrator_command(
+            ["runs", "extra"],
+            config=config,
+            output_mode=OutputMode.NORMAL,
+            config_path=None,
+        )
+        == 2
+    )
+    assert (
+        _run_orchestrator_command(
+            ["status"], config=config, output_mode=OutputMode.NORMAL, config_path=None
+        )
+        == 2
+    )
+    assert (
+        _run_orchestrator_command(
+            ["status", "bad"],
+            config=config,
+            output_mode=OutputMode.NORMAL,
+            config_path=None,
+        )
+        == 1
+    )
+    assert (
+        _run_orchestrator_command(
+            ["bogus"], config=config, output_mode=OutputMode.NORMAL, config_path=None
+        )
+        == 2
+    )
+    assert (
+        _run_orchestrator_command(
+            ["start", "--goal", ""],
+            config=config,
+            output_mode=OutputMode.NORMAL,
+            config_path=None,
+        )
+        == 2
+    )
+    assert (
+        _run_orchestrator_command(
+            ["start", "--goal", "g", "--concurrency", "0"],
+            config=config,
+            output_mode=OutputMode.NORMAL,
+            config_path=None,
+        )
+        == 2
+    )
+
+    assert (
+        _run_orchestrator_command(
+            ["follow-up", run_id, "--message", "global note"],
+            config=config,
+            output_mode=OutputMode.NORMAL,
+            config_path=None,
+        )
+        == 0
+    )
+    assert store.read_state(run_id)["followups"][0]["status"] == "recorded"
+
+    disabled = PIDConfig(
+        orchestrator=OrchestratorConfig(enabled=False, store_dir=str(store.root))
+    )
+    assert (
+        _run_orchestrator_command(
+            ["start", "--goal", "g"],
+            config=disabled,
+            output_mode=OutputMode.NORMAL,
+            config_path=None,
+        )
+        == 2
+    )
+
+    def bad_discover(*_args: object, **_kwargs: object) -> RunStore:
+        raise RuntimeError("no repo")
+
+    monkeypatch.setattr("pid.cli.RunStore.discover", bad_discover)
+    assert (
+        _run_orchestrator_command(
+            ["runs"], config=config, output_mode=OutputMode.NORMAL, config_path=None
+        )
+        == 1
+    )
+    assert "recorded orchestrator follow-up" in capsys.readouterr().out
+
+
+def test_orchestrator_status_and_runs_show_children(tmp_path: Path) -> None:
+    store = RunStore(tmp_path / "runs")
+    child = store.create_run(branch="feature/child", prompt="prompt", argv=[])
+    orch = store.create_orchestrator_run(
+        goal="goal",
+        questions=["q?"],
+        status="planned",
+        children=[
+            {
+                "item_id": "api",
+                "status": "planned",
+                "branch": "feature/child",
+                "child_run_id": child["run_id"],
+            }
+        ],
+    )
+    config = PIDConfig(orchestrator=OrchestratorConfig(store_dir=str(store.root)))
+
+    assert (
+        _run_orchestrator_command(
+            ["runs"], config=config, output_mode=OutputMode.NORMAL, config_path=None
+        )
+        == 0
+    )
+    assert (
+        _run_orchestrator_command(
+            ["status", str(orch["run_id"])],
+            config=config,
+            output_mode=OutputMode.NORMAL,
+            config_path=None,
+        )
+        == 0
+    )
+    status = _orchestrator_status(cast("dict[str, object]", orch), store)
+    assert "api running feature/child" in status
+
+
+def test_orchestrator_supervisor_launches_ready_children(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = RunStore(tmp_path / "runs")
+    config = PIDConfig(orchestrator=OrchestratorConfig(store_dir=str(store.root)))
+    plan_path = tmp_path / "plan.json"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "items": [
+                    {"id": "one", "title": "One"},
+                    {"id": "two", "title": "Two"},
+                    {"id": "later", "title": "Later", "dependencies": ["one"]},
+                ]
+            }
+        )
+    )
+    launched: list[list[str]] = []
+
+    class FakeProcess:
+        def __init__(self, command: list[str], **_kwargs: object) -> None:
+            launched.append(command)
+            self.pid = 1234 + len(launched)
+
+    monkeypatch.setattr("pid.orchestrator.subprocess.Popen", FakeProcess)
+    result = OrchestratorSupervisor(config=config, store=store).start(
+        OrchestratorStartOptions(
+            goal="goal",
+            plan_file=plan_path,
+            concurrency=1,
+            config_path=tmp_path / "config.toml",
+        )
+    )
+
+    children = result.state["children"]
+    assert children[0]["status"] == "launched"
+    assert children[1]["status"] == "queued"
+    assert children[2]["status"] == "blocked"
+    assert launched[0][:3] == [sys.executable, "-m", "pid"]
+    assert "--config" in launched[0]
+
+
+def test_orchestrator_helper_error_paths(tmp_path: Path) -> None:
+    config = PIDConfig()
+    bad_json = tmp_path / "bad.json"
+    bad_json.write_text("{")
+    with pytest.raises(ValueError, match="valid JSON"):
+        load_plan(bad_json)
+    missing = tmp_path / "missing.json"
+    with pytest.raises(ValueError, match="could not read"):
+        load_plan(missing)
+    scalar = tmp_path / "scalar.json"
+    scalar.write_text("1")
+    with pytest.raises(ValueError, match="JSON object"):
+        load_plan(scalar)
+    no_items = tmp_path / "no-items.json"
+    no_items.write_text(json.dumps({"items": "no"}))
+    with pytest.raises(ValueError, match="items array"):
+        load_plan(no_items)
+    item_array = tmp_path / "items.json"
+    item_array.write_text(json.dumps([{"title": "Doc task"}]))
+    assert load_plan(item_array)["items"][0]["title"] == "Doc task"
+
+    with pytest.raises(ValueError, match="at least one"):
+        build_child_records(
+            {"items": []}, goal="g", parent_run_id="p", branch_prefix="b", config=config
+        )
+    with pytest.raises(ValueError, match="must be an object"):
+        build_child_records(
+            {"items": ["bad"]},
+            goal="g",
+            parent_run_id="p",
+            branch_prefix="b",
+            config=config,
+        )
+    with pytest.raises(ValueError, match="duplicate"):
+        build_child_records(
+            {"items": [{"id": "x"}, {"id": "x"}]},
+            goal="g",
+            parent_run_id="p",
+            branch_prefix="b",
+            config=config,
+        )
+    with pytest.raises(ValueError, match="thinking"):
+        build_child_records(
+            {"items": [{"id": "x", "thinking": "huge"}]},
+            goal="g",
+            parent_run_id="p",
+            branch_prefix="b",
+            config=config,
+        )
+
+    assert (
+        select_thinking(
+            title="Security migration",
+            scope="auth data",
+            acceptance=[],
+            validation=[],
+            config=config,
+        )
+        == "xhigh"
+    )
+    assert string_list(None) == []
+    assert string_list("one") == ["one"]
+    assert string_list(2) == ["2"]
+    prompt = build_child_prompt(
+        goal="g",
+        constraints=["c"],
+        item_id="i",
+        title="t",
+        scope="s",
+        acceptance=["a"],
+        validation=["v"],
+        dependencies=["d"],
+    )
+    assert "Dependencies" in prompt and "Validation" in prompt
+
+
+def test_follow_up_target_selection_and_agent_commands(tmp_path: Path) -> None:
+    child = {
+        "item_id": "api",
+        "child_run_id": "20260429T010101001Z-abcdef",
+        "branch": "feat/api",
+        "prompt": "prompt",
+        "thinking": "high",
+    }
+    assert select_followup_targets([child], target="", all_children=True) == [child]
+    assert select_followup_targets([child], target="", all_children=False) == []
+    assert select_followup_targets("bad", target="api", all_children=True) == []
+    with pytest.raises(ValueError, match="no child"):
+        select_followup_targets([child], target="docs", all_children=False)
+
+    command = child_agent_command(
+        child,
+        parent_run_id="parent",
+        config_path=tmp_path / "config.toml",
+        default_thinking="medium",
+    )
+    assert command[:3] == [sys.executable, "-m", "pid"]
+    assert "--thinking" in command
+    child["thinking"] = "medium"
+    assert "--thinking" not in child_agent_command(
+        child, parent_run_id="parent", config_path=None, default_thinking="medium"
+    )
+
+
+def test_orchestrator_agent_control_failures(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = RunStore(tmp_path / "runs")
+    disabled = PIDConfig(orchestrator=OrchestratorConfig(enabled=False))
+    with pytest.raises(OrchestratorDisabled):
+        OrchestratorSupervisor(config=disabled, store=store)
+    with pytest.raises(OrchestratorDisabled):
+        OrchestratorAgent(config=disabled, store=store)
+
+    def raise_paused(self: PIDFlow, _argv: list[str]) -> WorkflowContext:
+        self.context = cast(
+            WorkflowContext,
+            SimpleNamespace(
+                branch="feature/x",
+                pr_url="",
+                worktree_path="",
+                followup_thinking_level="medium",
+                attempt=0,
+                commit_title="",
+            ),
+        )
+        raise WorkflowFailure(
+            FailureKind.FOLLOWUP_PAUSED,
+            "run_initial_agent",
+            0,
+            "paused",
+            True,
+        )
+
+    monkeypatch.setattr(PIDFlow, "run_supervised", raise_paused)
+    paused = OrchestratorAgent(config=PIDConfig(), store=store).start(
+        AgentStartOptions(branch="feature/pause", prompt="prompt")
+    )
+    assert paused.state["status"] == "paused"
+
+    def raise_aborted(self: PIDFlow, _argv: list[str]) -> WorkflowContext:
+        self.context = None
+        raise WorkflowFailure(
+            FailureKind.FOLLOWUP_ABORTED,
+            "run_initial_agent",
+            1,
+            "aborted",
+            False,
+        )
+
+    monkeypatch.setattr(PIDFlow, "run_supervised", raise_aborted)
+    aborted = OrchestratorAgent(config=PIDConfig(), store=store).start(
+        AgentStartOptions(branch="feature/abort", prompt="prompt")
+    )
+    assert aborted.state["status"] == "aborted"
 
 
 def test_run_supervised_records_extension_errors(

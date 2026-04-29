@@ -58,6 +58,14 @@ class DeterministicRecoveryPolicy:
                 "merge may be complete but cleanup failed; retry cleanup manually",
             )
         if failure.kind in {
+            FailureKind.FOLLOWUP_PAUSED,
+            FailureKind.FOLLOWUP_ABORTED,
+        }:
+            return RecoveryAction(
+                RecoveryActionKind.ASK_USER,
+                "run stopped by a queued follow-up control message",
+            )
+        if failure.kind in {
             FailureKind.INVALID_ARGS,
             FailureKind.MISSING_COMMAND,
             FailureKind.DIRTY_MAIN_WORKTREE,

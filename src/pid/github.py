@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 from pid.commands import CommandRunner
@@ -88,6 +89,7 @@ class Forge:
         timeout_seconds: int,
         poll_interval_seconds: int,
         worktree_path: str,
+        on_poll: Callable[[], None] | None = None,
     ) -> tuple[int, str]:
         """Wait for PR checks to finish or time out."""
 
@@ -96,6 +98,8 @@ class Forge:
 
         deadline = int(time.time()) + timeout_seconds
         while True:
+            if on_poll is not None:
+                on_poll()
             checks_result = self.runner.run(
                 self.config.command_line(self.config.pr_checks_args, branch=branch),
                 cwd=worktree_path,

@@ -30,6 +30,8 @@ class FailureKind(StrEnum):
     REBASE_IN_PROGRESS = "rebase_in_progress"
     CLEANUP_FAILED = "cleanup_failed"
     EXTENSION_FAILED = "extension_failed"
+    FOLLOWUP_PAUSED = "followup_paused"
+    FOLLOWUP_ABORTED = "followup_aborted"
 
 
 @dataclass(frozen=True)

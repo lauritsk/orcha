@@ -7,15 +7,11 @@ Use GitHub Issues for task tracking.
 ```bash
 gh issue list
 gh issue view <number>
+# Read templates, then create non-interactively with a body file.
 gh issue create \
-  --template agent_task.md \
-  --title "type(scope): concise outcome"
-gh issue create \
-  --template bug_report.md \
-  --title "fix(scope): concise bug summary"
-gh issue create \
-  --template feature_request.md \
-  --title "feat(scope): concise feature summary"
+  --title "type(scope): concise outcome" \
+  --body-file /tmp/issue-body.md \
+  --assignee @me
 gh issue edit <number> --add-assignee @me
 gh issue close <number>
 ```

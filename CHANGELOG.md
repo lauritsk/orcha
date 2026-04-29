@@ -2,6 +2,19 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## [v0.12.0](https://github.com/lauritsk/pid/compare/954181fdd87074ba41622c161c8a7ace9d4d5105..v0.12.0) - 2026-04-29
+#### Features
+- (**cli**) align agent and orchestrator flows - ([fef7114](https://github.com/lauritsk/pid/commit/fef711418aabfa3745e8f2a4fbfaff5064681fe0)) - Karl Hans Laurits
+#### Bug Fixes
+- (**ci**) align hk pkl package version - ([6b1ca0c](https://github.com/lauritsk/pid/commit/6b1ca0cecf83f0fc73edc6cbf7853ddb3f366f1b)) - Karl Hans Laurits
+- (**orchestrator**) collect intake answers in prompt mode - ([b11c710](https://github.com/lauritsk/pid/commit/b11c71096b1cc6abc6db76000f5afb6166472990)) - Karl Hans Laurits
+#### Refactoring
+- (**orchestrator**) extract child record helpers (#58) - ([2793d82](https://github.com/lauritsk/pid/commit/2793d826014dc070efac6b566f5de2ab8319db07)) - Karl Hans Laurits
+#### Miscellaneous Chores
+- update local pid tool - ([954181f](https://github.com/lauritsk/pid/commit/954181fdd87074ba41622c161c8a7ace9d4d5105)) - Karl Hans Laurits
+
+- - -
+
 ## [v0.11.0](https://github.com/lauritsk/pid/compare/829eef5c31377ef3324be2a8397fc7b62db9939e..v0.11.0) - 2026-04-29
 #### Features
 - (**cli**) polish startup flows - ([8e3c01a](https://github.com/lauritsk/pid/commit/8e3c01a277f2ba7a5efdfa802fc98dc36b0813eb)) - Karl Hans Laurits

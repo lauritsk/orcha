@@ -18,6 +18,7 @@ squash-merges the PR, and cleans up.
 - Creates, updates, checks, retries, and squash-merges PRs with a configurable
   forge CLI (`gh` by default).
 - Handles CI failure follow-ups and moved-base rebase retries.
+- Offers opt-in `pid agent` supervision with durable run state and typed failures.
 - Lists active and historical pid sessions.
 - Supports workflow extensions under `pid x ...`.
 - Optionally keeps the screen awake on macOS while pid runs.
@@ -72,7 +73,15 @@ pid init
 Run a non-interactive workflow:
 
 ```sh
-pid feature/add-docs "add project documentation"
+pid run feature/add-docs "add project documentation"
+```
+
+Or start supervised agent mode with durable run state:
+
+```sh
+pid agent start --branch feature/add-docs --prompt "add project documentation"
+pid agent runs
+pid agent status <run-id>
 ```
 
 Run an interactive agent session and let pid resume after the session exits:
@@ -94,7 +103,12 @@ pid sessions
 ```sh
 pid
 pid [OPTIONS] [ATTEMPTS] [THINKING] BRANCH PROMPT...
+pid [OPTIONS] run [ATTEMPTS] [THINKING] BRANCH PROMPT...
 pid [OPTIONS] session [ATTEMPTS] [THINKING] BRANCH [PROMPT...]
+pid agent start --branch BRANCH --prompt TEXT [--attempts N] [--thinking LEVEL]
+pid agent status RUN_ID
+pid agent runs
+pid agent resume RUN_ID
 pid init
 pid sessions [--all|-a]
 pid config show|default|path
@@ -123,6 +137,10 @@ pid --version
 | `--output agent` | Also show successful agent stderr. |
 | `--output all` | Show successful output from every captured command. Full logs are always written to the session log. |
 | `pid init` | Write recommended defaults to the platform config path. Refuses to overwrite an existing file. |
+| `pid agent start` | Run supervised workflow mode. Stores state under the git common dir by default. |
+| `pid agent status RUN_ID` | Show current step, status, PR URL, and failure for a run. |
+| `pid agent runs` | List recent supervised runs. |
+| `pid agent resume RUN_ID` | Reserved for resumable recovery; currently reports saved state and exits with guidance. |
 | `pid sessions` | List active pid sessions from session logs. |
 | `pid sessions --all`, `-a` | Include stale and completed sessions. |
 | `pid config show` | Print the loaded config as TOML. Honors `--config PATH`. |
@@ -179,6 +197,8 @@ Most workflow behavior is configurable. Important sections include:
 - `[agent]`: agent command, interactive/non-interactive args, thinking levels,
   review thinking, and display label.
 - `[runtime]`: runtime behavior such as macOS screen-awake support.
+- `[orchestrator]`: enable/disable `pid agent` and optionally set a custom
+  run-state directory.
 - `[commit]`: title verifier and automated feedback commit titles.
 - `[forge]`: forge command, PR create/edit/check/merge templates, merge
   confirmation, and check polling behavior.
@@ -192,6 +212,17 @@ Print the full built-in config with:
 ```sh
 pid config default
 ```
+
+Disable supervised agent mode, or move run state to an absolute directory:
+
+```toml
+[orchestrator]
+enabled = false
+store_dir = "/var/lib/pid/runs"
+```
+
+When `store_dir` is empty, `pid agent` writes under
+`<git-common-dir>/pid/runs/`, outside the worktree.
 
 ### Agent examples
 
@@ -303,6 +334,9 @@ Images from `dhi.io`.
 
 - `src/pid/cli.py`: Typer command-line wiring.
 - `src/pid/workflow.py`: high-level pid lifecycle.
+- `src/pid/orchestrator.py`, `run_state.py`, `failures.py`, and `policy.py`:
+  supervised agent mode, durable state, typed failures, and deterministic
+  recovery policy.
 - `src/pid/repository.py`: git, worktree, and commit operations.
 - `src/pid/github.py`: configurable forge/PR CLI operations.
 - `src/pid/prompts.py`: agent prompts and untrusted output isolation.

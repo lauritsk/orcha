@@ -31,6 +31,10 @@ label = "agent"
 [runtime]
 keep_screen_awake = false
 
+[orchestrator]
+enabled = true
+store_dir = ""
+
 [commit]
 verifier_command = ["cog"]
 verifier_args = ["verify", "{title}"]
@@ -243,6 +247,14 @@ class RuntimeConfig:
 
 
 @dataclass(frozen=True)
+class OrchestratorConfig:
+    """High-level orchestrator agent behavior."""
+
+    enabled: bool = True
+    store_dir: str = ""
+
+
+@dataclass(frozen=True)
 class CommitConfig:
     """Commit-message verification and fallback commit titles."""
 
@@ -400,6 +412,7 @@ class PIDConfig:
 
     agent: AgentConfig = field(default_factory=AgentConfig)
     runtime: RuntimeConfig = field(default_factory=RuntimeConfig)
+    orchestrator: OrchestratorConfig = field(default_factory=OrchestratorConfig)
     commit: CommitConfig = field(default_factory=CommitConfig)
     forge: ForgeConfig = field(default_factory=ForgeConfig)
     prompts: PromptConfig = field(default_factory=PromptConfig)
@@ -476,6 +489,7 @@ def parse_config(data: dict[str, Any], path: Path) -> PIDConfig:
     unknown_top = set(data) - {
         "agent",
         "runtime",
+        "orchestrator",
         "commit",
         "forge",
         "prompts",
@@ -488,6 +502,7 @@ def parse_config(data: dict[str, Any], path: Path) -> PIDConfig:
     return PIDConfig(
         agent=parse_agent_config(data.get("agent", {}), path),
         runtime=parse_runtime_config(data.get("runtime", {}), path),
+        orchestrator=parse_orchestrator_config(data.get("orchestrator", {}), path),
         commit=parse_commit_config(data.get("commit", {}), path),
         forge=parse_forge_config(data.get("forge", {}), path),
         prompts=parse_prompt_config(data.get("prompts", {}), path),
@@ -616,6 +631,21 @@ def parse_runtime_config(data: Any, path: Path) -> RuntimeConfig:
     )
 
     return RuntimeConfig(keep_screen_awake=keep_screen_awake)
+
+
+def parse_orchestrator_config(data: Any, path: Path) -> OrchestratorConfig:
+    data = config_section(data, path, "orchestrator", {"enabled", "store_dir"})
+
+    default = OrchestratorConfig()
+    enabled = boolean_value(
+        data.get("enabled", default.enabled), path, "orchestrator.enabled"
+    )
+    store_dir = string_value(
+        data.get("store_dir", default.store_dir), path, "orchestrator.store_dir"
+    )
+    if store_dir and not Path(store_dir).expanduser().is_absolute():
+        fail_config(path, "orchestrator.store_dir must be an absolute path")
+    return OrchestratorConfig(enabled=enabled, store_dir=store_dir)
 
 
 def parse_commit_config(data: Any, path: Path) -> CommitConfig:

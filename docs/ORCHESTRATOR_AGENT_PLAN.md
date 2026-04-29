@@ -1,6 +1,6 @@
 # Orchestrator Agent Implementation Plan
 
-Status: draft
+Status: MVP implemented
 Scope: design and implementation plan
 
 ## Goal
@@ -8,6 +8,11 @@ Scope: design and implementation plan
 Add a higher-level `pid agent` mode above the current workflow. The agent owns
 run state, observes structured progress, classifies terminal failures, and takes
 bounded recovery actions.
+
+MVP note: the first implementation ships deterministic policy, typed failure
+classification, durable run state, and `start`/`runs`/`status` commands. `resume`
+currently reports saved state and exits with guidance until context
+reconstruction is implemented.
 
 The project has no external users yet. Prefer the cleanest product and API shape
 over preserving early command forms.

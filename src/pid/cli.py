@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, cast
 
 import typer
 
@@ -21,7 +22,9 @@ from pid.extensions import (
 )
 from pid.interactive import resolve_interactive_args
 from pid.models import OutputMode
+from pid.orchestrator import AgentStartOptions, OrchestratorAgent, OrchestratorDisabled
 from pid.output import echo_err, echo_out
+from pid.run_state import RunStore
 from pid.workflow import run_pid
 
 APP_CONTEXT = {
@@ -34,6 +37,7 @@ CONFIG_USAGE = "usage: pid config show|default|path"
 SESSIONS_USAGE = "usage: pid sessions [--all|-a]"
 VERSION_USAGE = "usage: pid version"
 X_USAGE = "usage: pid x <extension-command> [ARGS...]"
+AGENT_USAGE = "usage: pid agent start|resume|status|runs"
 
 app = typer.Typer(add_completion=False, context_settings=APP_CONTEXT)
 
@@ -113,6 +117,13 @@ def main(
     except PIDAbort as error:
         raise typer.Exit(error.code) from error
 
+    if raw_args and raw_args[0] == "agent":
+        raise typer.Exit(
+            _run_agent_command(raw_args[1:], config=loaded_config, output_mode=output)
+        )
+    if raw_args and raw_args[0] == "run":
+        raw_args = raw_args[1:]
+
     try:
         resolved_args = (
             resolve_interactive_args(raw_args, loaded_config)
@@ -167,6 +178,171 @@ def _run_info_command(raw_args: list[str], *, config_path: Path | None) -> int |
         return 2
 
     return None
+
+
+def _run_agent_command(
+    raw_args: list[str], *, config: PIDConfig, output_mode: OutputMode
+) -> int:
+    if not raw_args or raw_args[0] in {"--help", "-h"}:
+        echo_out(AGENT_USAGE)
+        return 0
+    if not config.orchestrator.enabled:
+        echo_err("pid: orchestrator agent is disabled in config")
+        return 2
+
+    try:
+        store = RunStore.discover(configured_dir=config.orchestrator.store_dir)
+    except RuntimeError as error:
+        echo_err(f"pid: {error}")
+        return 1
+
+    command = raw_args[0]
+    if command == "runs":
+        if len(raw_args) != 1:
+            echo_err("pid: agent runs does not accept arguments")
+            echo_err(AGENT_USAGE)
+            return 2
+        typer.echo(_runs_table(store.list_runs()), nl=False)
+        return 0
+    if command == "status":
+        if len(raw_args) != 2:
+            echo_err("usage: pid agent status RUN_ID")
+            return 2
+        try:
+            typer.echo(_run_status(store.read_state(raw_args[1])), nl=False)
+        except (OSError, ValueError) as error:
+            echo_err(f"pid: could not read run {raw_args[1]}: {error}")
+            return 1
+        return 0
+    if command == "resume":
+        if len(raw_args) != 2:
+            echo_err("usage: pid agent resume RUN_ID")
+            return 2
+        try:
+            state = store.read_state(raw_args[1])
+        except (OSError, ValueError) as error:
+            echo_err(f"pid: could not read run {raw_args[1]}: {error}")
+            return 1
+        typer.echo(_run_status(state), nl=False)
+        echo_err("pid: agent resume cannot reconstruct workflow context yet")
+        return 2
+    if command != "start":
+        echo_err(f"pid: unknown agent command: {command}")
+        echo_err(AGENT_USAGE)
+        return 2
+
+    try:
+        options = _parse_agent_start(raw_args[1:])
+    except ValueError as error:
+        echo_err(f"pid: {error}")
+        echo_err(
+            "usage: pid agent start --branch BRANCH --prompt TEXT [--attempts N] [--thinking LEVEL]"
+        )
+        return 2
+
+    try:
+        agent = OrchestratorAgent(
+            config=config,
+            store=store,
+            output_mode=output_mode,
+        )
+        result = agent.start(options)
+    except OrchestratorDisabled as error:  # pragma: no cover - prechecked above
+        echo_err(f"pid: {error}")
+        return 2
+    except ValueError as error:
+        echo_err(f"pid: {error}")
+        return 2
+
+    echo_out(f"pid: agent run {result.run_id}: {result.state['status']}")
+    if result.state.get("pr_url"):
+        echo_out(f"pid: PR: {result.state['pr_url']}")
+    return result.exit_code
+
+
+def _parse_agent_start(raw_args: list[str]) -> AgentStartOptions:
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--branch", required=True)
+    parser.add_argument("--prompt", required=True)
+    parser.add_argument("--attempts", type=int, default=3)
+    parser.add_argument("--thinking", default="")
+    parser.add_argument("--non-interactive", action="store_true")
+    parser.add_argument("--yes", action="store_true")
+    parser.add_argument("--advisor", choices=("policy", "pi"), default="policy")
+    parser.add_argument("--confirm-merge", action="store_true")
+    try:
+        namespace, extras = parser.parse_known_args(raw_args)
+    except SystemExit as error:
+        raise ValueError("invalid agent start options") from error
+    if extras:
+        raise ValueError(f"unexpected agent start arguments: {' '.join(extras)}")
+    if namespace.attempts < 1:
+        raise ValueError("--attempts must be a positive integer")
+    if not namespace.branch:
+        raise ValueError("--branch must be non-empty")
+    if not namespace.prompt:
+        raise ValueError("--prompt must be non-empty")
+    return AgentStartOptions(
+        branch=namespace.branch,
+        prompt=namespace.prompt,
+        attempts=namespace.attempts,
+        thinking=namespace.thinking,
+        non_interactive=namespace.non_interactive,
+        yes=namespace.yes,
+        advisor=namespace.advisor,
+        confirm_merge=namespace.confirm_merge,
+    )
+
+
+def _runs_table(runs: list[dict[str, object]]) -> str:
+    if not runs:
+        return "no pid agent runs\n"
+    headers = ["run_id", "status", "branch", "step", "pr_url"]
+    rows = [
+        [
+            str(run.get("run_id", "")),
+            str(run.get("status", "")),
+            str(run.get("branch", "")),
+            str(run.get("current_step", "")),
+            str(run.get("pr_url", "")),
+        ]
+        for run in runs
+    ]
+    widths = [
+        max(len(header), *(len(row[index]) for row in rows))
+        for index, header in enumerate(headers)
+    ]
+    lines = [
+        "  ".join(header.ljust(widths[index]) for index, header in enumerate(headers))
+    ]
+    lines.append("  ".join("-" * width for width in widths))
+    lines.extend(
+        "  ".join(value.ljust(widths[index]) for index, value in enumerate(row))
+        for row in rows
+    )
+    return "\n".join(lines) + "\n"
+
+
+def _run_status(state: dict[str, object]) -> str:
+    lines = [
+        f"run_id: {state.get('run_id', '')}",
+        f"status: {state.get('status', '')}",
+        f"branch: {state.get('branch', '')}",
+        f"current_step: {state.get('current_step', '')}",
+        f"pr_url: {state.get('pr_url', '')}",
+    ]
+    failure = state.get("last_failure")
+    if isinstance(failure, dict):
+        failure_data = cast("dict[str, object]", failure)
+        lines.append(
+            f"failure: {failure_data.get('kind', '')} at {failure_data.get('step', '')}"
+        )
+        lines.append(f"message: {failure_data.get('message', '')}")
+    action = state.get("pending_recovery_action")
+    if isinstance(action, dict):
+        action_data = cast("dict[str, object]", action)
+        lines.append(f"pending_recovery_action: {action_data.get('kind', '')}")
+    return "\n".join(lines) + "\n"
 
 
 def _run_extension_command(raw_args: list[str], *, config_path: Path | None) -> int:

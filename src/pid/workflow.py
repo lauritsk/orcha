@@ -22,6 +22,7 @@ from pid.extensions import (
     load_enabled_extensions,
     normalize_step_result,
 )
+from pid.failures import WorkflowFailure, failure_from_abort
 from pid.github import Forge
 from pid.keepawake import KeepAwake
 from pid.messages import parse_commit_message
@@ -96,6 +97,7 @@ class PIDFlow:
         self.keep_awake: KeepAwake | None = None
         self.output_mode = output_mode
         self.context: WorkflowContext | None = None
+        self.current_step = ""
 
     def run(self, argv: list[str]) -> int:
         exit_code = 0
@@ -125,6 +127,38 @@ class PIDFlow:
                 set_session_logger(None)
                 self.runner.set_logger(None)
         return exit_code
+
+    def run_supervised(self, argv: list[str]) -> WorkflowContext:
+        """Run workflow and return final context, raising typed failures."""
+
+        exit_code = 0
+        try:
+            self._run(argv)
+            if self.context is None:  # pragma: no cover - _run always sets context
+                raise RuntimeError("workflow context was not created")
+            return self.context
+        except PIDAbort as error:
+            exit_code = error.code
+            raise failure_from_abort(
+                code=error.code, step=self.current_step, context=self.context
+            ) from error
+        except WorkflowFailure:
+            raise
+        except ExtensionError:
+            exit_code = 2
+            raise
+        except Exception:
+            exit_code = 1
+            raise
+        finally:
+            if self.keep_awake is not None:
+                self.keep_awake.stop()
+                self.keep_awake = None
+            if self.session_logger is not None:
+                self.session_logger.event(f"exit code: {exit_code}")
+                self.session_logger.close()
+                set_session_logger(None)
+                self.runner.set_logger(None)
 
     def _run(self, argv: list[str]) -> None:
         ctx = WorkflowContext(
@@ -238,6 +272,7 @@ class PIDFlow:
         step = self.registry.replaced_steps.get(step.name, step)
         retries = 0
         while True:
+            self.current_step = step.name
             ctx.emit("step.started", step=step.name)
             before_result = self.registry.run_hooks(f"before.{step.name}", ctx)
             if before_result.action == "skip":
@@ -272,6 +307,7 @@ class PIDFlow:
                 continue
             self.handle_step_result(result)
             ctx.emit("step.completed", step=step.name)
+            self.current_step = ""
             return
 
     @staticmethod

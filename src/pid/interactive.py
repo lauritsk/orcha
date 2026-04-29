@@ -2,18 +2,20 @@
 
 from __future__ import annotations
 
-import argparse
 import re
 import shutil
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Annotated
 
-import click
+import typer
 from rich.console import Console, Group
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
 from pid.config import PIDConfig
+from pid.typer_parsing import TYPER_PARSER_CONTEXT, parse_typer_args
 
 
 _AGENT_START_USAGE = (
@@ -24,6 +26,125 @@ _ORCHESTRATOR_START_USAGE = (
     "usage: pid orchestrator [start] --goal TEXT "
     "[--plan-file plan.json] [--branch-prefix PREFIX] [--concurrency N]"
 )
+
+
+@dataclass(frozen=True)
+class _AgentStartPartial:
+    branch: str | None = None
+    prompt: str | None = None
+    attempts: str | None = None
+    thinking: str | None = None
+    non_interactive: bool = False
+    yes: bool = False
+    run_id: str = ""
+    parent_run_id: str = ""
+    plan_item_id: str = ""
+
+
+@dataclass(frozen=True)
+class _OrchestratorStartPartial:
+    goal: str | None = None
+    plan_file: Path | None = None
+    branch_prefix: str | None = None
+    concurrency: str | None = None
+    dry_run: bool = False
+    non_interactive: bool = False
+    yes: bool = False
+
+
+_AGENT_START_PARTIAL_PARSER = typer.Typer(
+    add_completion=False, context_settings=TYPER_PARSER_CONTEXT
+)
+_ORCHESTRATOR_START_PARTIAL_PARSER = typer.Typer(
+    add_completion=False, context_settings=TYPER_PARSER_CONTEXT
+)
+
+
+@_AGENT_START_PARTIAL_PARSER.command(context_settings=TYPER_PARSER_CONTEXT)
+def _agent_start_partial_options(
+    ctx: typer.Context,
+    branch: Annotated[
+        str | None, typer.Option("--branch", help="Branch to create/run.")
+    ] = None,
+    prompt: Annotated[
+        str | None, typer.Option("--prompt", help="Agent prompt text.")
+    ] = None,
+    attempts: Annotated[
+        str | None, typer.Option("--attempts", help="Maximum PR loop attempts.")
+    ] = None,
+    thinking: Annotated[
+        str | None, typer.Option("--thinking", help="Agent thinking level override.")
+    ] = None,
+    non_interactive: Annotated[
+        bool, typer.Option("--non-interactive", help="Disable intake prompts.")
+    ] = False,
+    yes: Annotated[
+        bool, typer.Option("--yes", "-y", help="Accept prompted values.")
+    ] = False,
+    run_id: Annotated[
+        str, typer.Option("--run-id", help="Reuse an existing run id.")
+    ] = "",
+    parent_run_id: Annotated[
+        str, typer.Option("--parent-run-id", help="Parent orchestrator run id.")
+    ] = "",
+    plan_item_id: Annotated[
+        str, typer.Option("--plan-item-id", help="Parent plan item id.")
+    ] = "",
+) -> tuple[_AgentStartPartial, list[str]]:
+    return (
+        _AgentStartPartial(
+            branch=branch,
+            prompt=prompt,
+            attempts=attempts,
+            thinking=thinking,
+            non_interactive=non_interactive,
+            yes=yes,
+            run_id=run_id,
+            parent_run_id=parent_run_id,
+            plan_item_id=plan_item_id,
+        ),
+        list(ctx.args),
+    )
+
+
+@_ORCHESTRATOR_START_PARTIAL_PARSER.command(context_settings=TYPER_PARSER_CONTEXT)
+def _orchestrator_start_partial_options(
+    ctx: typer.Context,
+    goal: Annotated[
+        str | None, typer.Option("--goal", help="Overall orchestration goal.")
+    ] = None,
+    plan_file: Annotated[
+        Path | None,
+        typer.Option("--plan-file", help="Structured plan JSON to launch."),
+    ] = None,
+    branch_prefix: Annotated[
+        str | None, typer.Option("--branch-prefix", help="Prefix for child branches.")
+    ] = None,
+    concurrency: Annotated[
+        str | None, typer.Option("--concurrency", help="Maximum concurrent child runs.")
+    ] = None,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Plan child runs without launching them.")
+    ] = False,
+    non_interactive: Annotated[
+        bool, typer.Option("--non-interactive", help="Disable intake prompts.")
+    ] = False,
+    yes: Annotated[
+        bool, typer.Option("--yes", "-y", help="Accept prompted values.")
+    ] = False,
+) -> tuple[_OrchestratorStartPartial, list[str]]:
+    return (
+        _OrchestratorStartPartial(
+            goal=goal,
+            plan_file=plan_file,
+            branch_prefix=branch_prefix,
+            concurrency=concurrency,
+            dry_run=dry_run,
+            non_interactive=non_interactive,
+            yes=yes,
+        ),
+        list(ctx.args),
+    )
 
 
 def resolve_interactive_args(argv: list[str], config: PIDConfig) -> list[str]:
@@ -104,8 +225,8 @@ def resolve_interactive_args(argv: list[str], config: PIDConfig) -> list[str]:
 
     if prompted:
         display.render(_values(attempts, thinking, branch, prompt))
-        if not click.confirm("Continue with these values?", default=True):
-            raise click.Abort()
+        if not typer.confirm("Continue with these values?", default=True):
+            raise typer.Abort()
 
     return resolved
 
@@ -119,7 +240,7 @@ def resolve_agent_start_args(argv: list[str], config: PIDConfig) -> list[str]:
     original = list(argv)
     try:
         namespace, extras = _parse_agent_start_partial(argv)
-    except SystemExit:
+    except ValueError:
         return original
     if extras or namespace.non_interactive:
         return original
@@ -174,10 +295,10 @@ def resolve_agent_start_args(argv: list[str], config: PIDConfig) -> list[str]:
         return original
     values = _values(attempts, thinking, branch, prompt)
     display.render(values)
-    if not namespace.yes and not click.confirm(
+    if not namespace.yes and not typer.confirm(
         "Start supervised agent run?", default=True
     ):
-        raise click.Abort()
+        raise typer.Abort()
 
     return _normalized_agent_start_args(namespace, attempts, thinking, branch, prompt)
 
@@ -192,7 +313,7 @@ def resolve_orchestrator_start_args(argv: list[str], config: PIDConfig) -> list[
     original = list(argv)
     try:
         namespace, extras = _parse_orchestrator_start_partial(argv)
-    except SystemExit:
+    except ValueError:
         return original
     if extras or namespace.non_interactive:
         return original
@@ -248,8 +369,8 @@ def resolve_orchestrator_start_args(argv: list[str], config: PIDConfig) -> list[
         return original
     values = _orchestrator_values(goal, plan_file, branch_prefix, concurrency)
     display.render(values)
-    if not namespace.yes and not click.confirm("Start orchestrator run?", default=True):
-        raise click.Abort()
+    if not namespace.yes and not typer.confirm("Start orchestrator run?", default=True):
+        raise typer.Abort()
 
     return _normalized_orchestrator_start_args(
         namespace,
@@ -260,36 +381,32 @@ def resolve_orchestrator_start_args(argv: list[str], config: PIDConfig) -> list[
     )
 
 
-def _parse_agent_start_partial(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
-    parser = argparse.ArgumentParser(add_help=False, usage=_AGENT_START_USAGE)
-    parser.add_argument("--branch")
-    parser.add_argument("--prompt")
-    parser.add_argument("--attempts")
-    parser.add_argument("--thinking")
-    parser.add_argument("--non-interactive", action="store_true")
-    parser.add_argument("--yes", action="store_true")
-    parser.add_argument("--run-id", default="")
-    parser.add_argument("--parent-run-id", default="")
-    parser.add_argument("--plan-item-id", default="")
-    return parser.parse_known_args(argv)
+def _parse_agent_start_partial(
+    argv: list[str],
+) -> tuple[_AgentStartPartial, list[str]]:
+    parsed: tuple[_AgentStartPartial, list[str]] = parse_typer_args(
+        _AGENT_START_PARTIAL_PARSER,
+        argv,
+        prog_name=_AGENT_START_USAGE,
+        error_message="invalid agent start options",
+    )
+    return parsed
 
 
 def _parse_orchestrator_start_partial(
     argv: list[str],
-) -> tuple[argparse.Namespace, list[str]]:
-    parser = argparse.ArgumentParser(add_help=False, usage=_ORCHESTRATOR_START_USAGE)
-    parser.add_argument("--goal")
-    parser.add_argument("--plan-file", type=Path)
-    parser.add_argument("--branch-prefix")
-    parser.add_argument("--concurrency")
-    parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--non-interactive", action="store_true")
-    parser.add_argument("--yes", action="store_true")
-    return parser.parse_known_args(argv)
+) -> tuple[_OrchestratorStartPartial, list[str]]:
+    parsed: tuple[_OrchestratorStartPartial, list[str]] = parse_typer_args(
+        _ORCHESTRATOR_START_PARTIAL_PARSER,
+        argv,
+        prog_name=_ORCHESTRATOR_START_USAGE,
+        error_message="invalid orchestrator start options",
+    )
+    return parsed
 
 
 def _normalized_agent_start_args(
-    namespace: argparse.Namespace,
+    namespace: _AgentStartPartial,
     attempts: str,
     thinking: str,
     branch: str,
@@ -309,7 +426,7 @@ def _normalized_agent_start_args(
 
 
 def _normalized_orchestrator_start_args(
-    namespace: argparse.Namespace,
+    namespace: _OrchestratorStartPartial,
     *,
     goal: str,
     plan_file: str,
@@ -363,7 +480,7 @@ class _InteractiveDisplay:
         self.title = title
         self.subtitle = subtitle
         self._line_count = 0
-        self._can_update = click.get_text_stream("stdout").isatty()
+        self._can_update = typer.get_text_stream("stdout").isatty()
         terminal_width = shutil.get_terminal_size((88, 24)).columns
         width = min(terminal_width, 88) if self._can_update else 88
         self._console = Console(
@@ -376,9 +493,9 @@ class _InteractiveDisplay:
     def render(self, values: dict[str, str], *, error: str | None = None) -> None:
         self._clear_previous()
         rendered = self._render(values, error=error if self._can_update else None)
-        click.echo(rendered, nl=False, color=True)
+        typer.echo(rendered, nl=False, color=True)
         if error and not self._can_update:
-            click.echo(error, err=True)
+            typer.echo(error, err=True)
         self._line_count = len(rendered.splitlines())
 
     def record_prompt_result(
@@ -389,7 +506,7 @@ class _InteractiveDisplay:
         default: str | None = None,
         show_default: bool = False,
     ) -> None:
-        """Account for the click prompt line before the next in-place render."""
+        """Account for the Typer prompt line before the next in-place render."""
 
         if not self._can_update:
             return
@@ -416,12 +533,12 @@ class _InteractiveDisplay:
     def _clear_previous(self) -> None:
         if not self._can_update or self._line_count <= 0:
             return
-        click.echo(f"\033[{self._line_count}A", nl=False, color=True)
+        typer.echo(f"\033[{self._line_count}A", nl=False, color=True)
         for index in range(self._line_count):
-            click.echo("\033[2K\r", nl=False, color=True)
+            typer.echo("\033[2K\r", nl=False, color=True)
             if index < self._line_count - 1:
-                click.echo("\033[1B", nl=False, color=True)
-        click.echo(f"\033[{self._line_count - 1}A", nl=False, color=True)
+                typer.echo("\033[1B", nl=False, color=True)
+        typer.echo(f"\033[{self._line_count - 1}A", nl=False, color=True)
 
 
 def _prompt_summary(
@@ -464,7 +581,7 @@ def _prompt_attempts(
     while True:
         display.render(values, error=error)
         message = "Attempts (positive integer)"
-        value = click.prompt(message, default=default, show_default=True)
+        value = typer.prompt(message, default=default, show_default=True)
         display.record_prompt_result(message, value, default=default, show_default=True)
         if re.fullmatch(r"[1-9][0-9]*", value):
             return value
@@ -483,7 +600,7 @@ def _prompt_thinking(
     while True:
         display.render(values, error=error)
         message = f"Thinking level ({levels})"
-        value = click.prompt(message, default=default, show_default=True)
+        value = typer.prompt(message, default=default, show_default=True)
         display.record_prompt_result(message, value, default=default, show_default=True)
         if value in thinking_levels:
             return value
@@ -502,7 +619,7 @@ def _prompt_required(
     while True:
         display.render(values, error=error)
         message = f"{label} (example: {example})"
-        value = click.prompt(message, default=default, show_default=bool(default))
+        value = typer.prompt(message, default=default, show_default=bool(default))
         display.record_prompt_result(
             message, value, default=default or None, show_default=bool(default)
         )
@@ -516,7 +633,7 @@ def _prompt_optional(
 ) -> str:
     display.render(values)
     message = f"{label} (optional, example: {example})"
-    value = click.prompt(message, default="", show_default=False)
+    value = typer.prompt(message, default="", show_default=False)
     display.record_prompt_result(message, value)
     return value.strip()
 
@@ -532,7 +649,7 @@ def _prompt_positive_int(
     while True:
         display.render(values, error=error)
         message = f"{label} (positive integer)"
-        value = click.prompt(message, default=default, show_default=True)
+        value = typer.prompt(message, default=default, show_default=True)
         display.record_prompt_result(message, value, default=default, show_default=True)
         if re.fullmatch(r"[1-9][0-9]*", value):
             return value

@@ -5,6 +5,8 @@ from __future__ import annotations
 import sys
 from typing import TextIO
 
+import typer
+
 from pid.session_logging import SessionLogger
 
 from rich.console import Console
@@ -37,10 +39,9 @@ def write_collected(value: str, *, stream: TextIO) -> None:
 
     if not value:
         return
-    writer = stream.write
-    writer(value)
+    typer.echo(value, file=stream, nl=False)
     if not value.endswith("\n"):
-        writer("\n")
+        typer.echo(file=stream)
 
 
 def write_command_output(result: CommandResult) -> None:
@@ -55,7 +56,7 @@ def echo_out(message: str) -> None:
 
     if _CURRENT_LOGGER is not None:
         _CURRENT_LOGGER.output("stdout", message)
-    print(message)
+    typer.echo(message)
 
 
 def echo_err(message: str) -> None:
@@ -63,7 +64,7 @@ def echo_err(message: str) -> None:
 
     if _CURRENT_LOGGER is not None:
         _CURRENT_LOGGER.output("stderr", message)
-    print(message, file=sys.stderr)
+    typer.echo(message, err=True)
 
 
 def print_run_summary(

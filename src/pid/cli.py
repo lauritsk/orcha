@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import argparse
 import sys
 from pathlib import Path
 from typing import Annotated, cast
@@ -35,6 +34,7 @@ from pid.orchestrator import (
 )
 from pid.output import echo_err, echo_out
 from pid.run_state import RunStore
+from pid.typer_parsing import TYPER_PARSER_CONTEXT, parse_typer_args
 from pid.workflow import run_pid
 
 APP_CONTEXT = {
@@ -59,6 +59,176 @@ ORCHESTRATOR_USAGE = (
 )
 
 app = typer.Typer(add_completion=False, context_settings=APP_CONTEXT)
+
+_AGENT_START_PARSER = typer.Typer(
+    add_completion=False, context_settings=TYPER_PARSER_CONTEXT
+)
+_AGENT_FOLLOW_UP_PARSER = typer.Typer(
+    add_completion=False, context_settings=TYPER_PARSER_CONTEXT
+)
+_ORCHESTRATOR_START_PARSER = typer.Typer(
+    add_completion=False, context_settings=TYPER_PARSER_CONTEXT
+)
+_ORCHESTRATOR_FOLLOW_UP_PARSER = typer.Typer(
+    add_completion=False, context_settings=TYPER_PARSER_CONTEXT
+)
+
+
+@_AGENT_START_PARSER.command(context_settings=TYPER_PARSER_CONTEXT)
+def _agent_start_options(
+    ctx: typer.Context,
+    branch: Annotated[str, typer.Option("--branch", help="Branch to create/run.")],
+    prompt: Annotated[str, typer.Option("--prompt", help="Agent prompt text.")],
+    attempts: Annotated[
+        int, typer.Option("--attempts", help="Maximum PR loop attempts.")
+    ] = 3,
+    thinking: Annotated[
+        str, typer.Option("--thinking", help="Agent thinking level override.")
+    ] = "",
+    non_interactive: Annotated[
+        bool, typer.Option("--non-interactive", help="Disable intake prompts.")
+    ] = False,
+    yes: Annotated[
+        bool, typer.Option("--yes", "-y", help="Accept prompted values.")
+    ] = False,
+    run_id: Annotated[
+        str, typer.Option("--run-id", help="Reuse an existing run id.")
+    ] = "",
+    parent_run_id: Annotated[
+        str, typer.Option("--parent-run-id", help="Parent orchestrator run id.")
+    ] = "",
+    plan_item_id: Annotated[
+        str, typer.Option("--plan-item-id", help="Parent plan item id.")
+    ] = "",
+) -> AgentStartOptions:
+    """Parse `pid agent start` options with Typer."""
+
+    del non_interactive, yes
+    if ctx.args:
+        raise ValueError(f"unexpected agent start arguments: {' '.join(ctx.args)}")
+    branch = branch.strip()
+    prompt = prompt.strip()
+    thinking = thinking.strip()
+    if attempts < 1:
+        raise ValueError("--attempts must be a positive integer")
+    if not branch:
+        raise ValueError("--branch must be non-empty")
+    if not prompt:
+        raise ValueError("--prompt must be non-empty")
+    return AgentStartOptions(
+        branch=branch,
+        prompt=prompt,
+        attempts=attempts,
+        thinking=thinking,
+        run_id=run_id.strip(),
+        parent_run_id=parent_run_id.strip(),
+        plan_item_id=plan_item_id.strip(),
+    )
+
+
+@_AGENT_FOLLOW_UP_PARSER.command(context_settings=TYPER_PARSER_CONTEXT)
+def _agent_follow_up_options(
+    ctx: typer.Context,
+    run_id: Annotated[str, typer.Argument(help="Run id to receive the follow-up.")],
+    message: Annotated[
+        str, typer.Option("--message", "-m", help="Follow-up message text.")
+    ] = "",
+    kind: Annotated[
+        str, typer.Option("--type", help="Follow-up type/kind.")
+    ] = "clarify",
+    read_stdin: Annotated[
+        bool, typer.Option("--stdin", help="Read follow-up message from stdin.")
+    ] = False,
+) -> tuple[str, str, str]:
+    """Parse `pid agent follow-up` options with Typer."""
+
+    if ctx.args:
+        raise ValueError(f"unexpected follow-up arguments: {' '.join(ctx.args)}")
+    body = sys.stdin.read() if read_stdin else message
+    return run_id.strip(), kind.strip(), body.strip()
+
+
+@_ORCHESTRATOR_START_PARSER.command(context_settings=TYPER_PARSER_CONTEXT)
+def _orchestrator_start_options(
+    ctx: typer.Context,
+    goal: Annotated[str, typer.Option("--goal", help="Overall orchestration goal.")],
+    plan_file: Annotated[
+        Path | None,
+        typer.Option("--plan-file", help="Structured plan JSON to launch."),
+    ] = None,
+    branch_prefix: Annotated[
+        str, typer.Option("--branch-prefix", help="Prefix for child branches.")
+    ] = "work",
+    concurrency: Annotated[
+        int, typer.Option("--concurrency", help="Maximum concurrent child runs.")
+    ] = 4,
+    dry_run: Annotated[
+        bool, typer.Option("--dry-run", help="Plan child runs without launching them.")
+    ] = False,
+    non_interactive: Annotated[
+        bool, typer.Option("--non-interactive", help="Disable intake prompts.")
+    ] = False,
+    yes: Annotated[
+        bool, typer.Option("--yes", "-y", help="Accept prompted values.")
+    ] = False,
+) -> OrchestratorStartOptions:
+    """Parse `pid orchestrator start` options with Typer."""
+
+    del yes
+    if ctx.args:
+        raise ValueError(f"unexpected orchestrator arguments: {' '.join(ctx.args)}")
+    goal = goal.strip()
+    branch_prefix = branch_prefix.strip().strip("/")
+    if not goal:
+        raise ValueError("--goal must be non-empty")
+    if not branch_prefix:
+        raise ValueError("--branch-prefix must be non-empty")
+    if concurrency < 1:
+        raise ValueError("--concurrency must be a positive integer")
+    return OrchestratorStartOptions(
+        goal=goal,
+        plan_file=plan_file,
+        branch_prefix=branch_prefix,
+        concurrency=concurrency,
+        dry_run=dry_run,
+        non_interactive=non_interactive,
+    )
+
+
+@_ORCHESTRATOR_FOLLOW_UP_PARSER.command(context_settings=TYPER_PARSER_CONTEXT)
+def _orchestrator_follow_up_options(
+    ctx: typer.Context,
+    run_id: Annotated[str, typer.Argument(help="Orchestrator run id.")],
+    message: Annotated[
+        str, typer.Option("--message", "-m", help="Follow-up message text.")
+    ] = "",
+    kind: Annotated[
+        str, typer.Option("--type", help="Follow-up type/kind.")
+    ] = "clarify",
+    target: Annotated[
+        str, typer.Option("--target", help="Plan item id or child run id target.")
+    ] = "",
+    all_children: Annotated[
+        bool, typer.Option("--all", help="Route follow-up to all child runs.")
+    ] = False,
+    read_stdin: Annotated[
+        bool, typer.Option("--stdin", help="Read follow-up message from stdin.")
+    ] = False,
+) -> OrchestratorFollowUpOptions:
+    """Parse `pid orchestrator follow-up` options with Typer."""
+
+    if ctx.args:
+        raise ValueError(
+            f"unexpected orchestrator follow-up arguments: {' '.join(ctx.args)}"
+        )
+    body = sys.stdin.read() if read_stdin else message
+    return OrchestratorFollowUpOptions(
+        run_id=run_id.strip(),
+        message=body.strip(),
+        kind=kind.strip(),
+        target=target.strip(),
+        all_children=all_children,
+    )
 
 
 @app.command(context_settings=APP_CONTEXT)
@@ -299,56 +469,23 @@ def _run_agent_command(
 
 
 def _parse_agent_start(raw_args: list[str]) -> AgentStartOptions:
-    parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--branch", required=True)
-    parser.add_argument("--prompt", required=True)
-    parser.add_argument("--attempts", type=int, default=3)
-    parser.add_argument("--thinking", default="")
-    parser.add_argument("--non-interactive", action="store_true")
-    parser.add_argument("--yes", action="store_true")
-    parser.add_argument("--run-id", default="")
-    parser.add_argument("--parent-run-id", default="")
-    parser.add_argument("--plan-item-id", default="")
-    try:
-        namespace, extras = parser.parse_known_args(raw_args)
-    except SystemExit as error:
-        raise ValueError("invalid agent start options") from error
-    if extras:
-        raise ValueError(f"unexpected agent start arguments: {' '.join(extras)}")
-    branch = namespace.branch.strip()
-    prompt = namespace.prompt.strip()
-    thinking = namespace.thinking.strip()
-    if namespace.attempts < 1:
-        raise ValueError("--attempts must be a positive integer")
-    if not branch:
-        raise ValueError("--branch must be non-empty")
-    if not prompt:
-        raise ValueError("--prompt must be non-empty")
-    return AgentStartOptions(
-        branch=branch,
-        prompt=prompt,
-        attempts=namespace.attempts,
-        thinking=thinking,
-        run_id=namespace.run_id.strip(),
-        parent_run_id=namespace.parent_run_id.strip(),
-        plan_item_id=namespace.plan_item_id.strip(),
+    options: AgentStartOptions = parse_typer_args(
+        _AGENT_START_PARSER,
+        raw_args,
+        prog_name="pid agent start",
+        error_message="invalid agent start options",
     )
+    return options
 
 
 def _parse_agent_follow_up(raw_args: list[str]) -> tuple[str, str, str]:
-    parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("run_id")
-    parser.add_argument("--message", default="")
-    parser.add_argument("--type", default="clarify")
-    parser.add_argument("--stdin", action="store_true")
-    try:
-        namespace, extras = parser.parse_known_args(raw_args)
-    except SystemExit as error:
-        raise ValueError("invalid follow-up options") from error
-    if extras:
-        raise ValueError(f"unexpected follow-up arguments: {' '.join(extras)}")
-    message = sys.stdin.read() if namespace.stdin else namespace.message
-    return namespace.run_id.strip(), namespace.type.strip(), message.strip()
+    follow_up: tuple[str, str, str] = parse_typer_args(
+        _AGENT_FOLLOW_UP_PARSER,
+        raw_args,
+        prog_name="pid agent follow-up",
+        error_message="invalid follow-up options",
+    )
+    return follow_up
 
 
 def _run_orchestrator_command(
@@ -462,63 +599,31 @@ def _run_orchestrator_command(
 def _parse_orchestrator_start(
     raw_args: list[str], *, config_path: Path | None
 ) -> OrchestratorStartOptions:
-    parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--goal", required=True)
-    parser.add_argument("--plan-file", type=Path)
-    parser.add_argument("--branch-prefix", default="work")
-    parser.add_argument("--concurrency", type=int, default=4)
-    parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--non-interactive", action="store_true")
-    parser.add_argument("--yes", action="store_true")
-    try:
-        namespace, extras = parser.parse_known_args(raw_args)
-    except SystemExit as error:
-        raise ValueError("invalid orchestrator start options") from error
-    if extras:
-        raise ValueError(f"unexpected orchestrator arguments: {' '.join(extras)}")
-    goal = namespace.goal.strip()
-    branch_prefix = namespace.branch_prefix.strip().strip("/")
-    if not goal:
-        raise ValueError("--goal must be non-empty")
-    if not branch_prefix:
-        raise ValueError("--branch-prefix must be non-empty")
-    if namespace.concurrency < 1:
-        raise ValueError("--concurrency must be a positive integer")
+    options: OrchestratorStartOptions = parse_typer_args(
+        _ORCHESTRATOR_START_PARSER,
+        raw_args,
+        prog_name="pid orchestrator start",
+        error_message="invalid orchestrator start options",
+    )
     return OrchestratorStartOptions(
-        goal=goal,
-        plan_file=namespace.plan_file,
-        branch_prefix=branch_prefix,
-        concurrency=namespace.concurrency,
-        dry_run=namespace.dry_run,
-        non_interactive=namespace.non_interactive,
+        goal=options.goal,
+        plan_file=options.plan_file,
+        branch_prefix=options.branch_prefix,
+        concurrency=options.concurrency,
+        dry_run=options.dry_run,
+        non_interactive=options.non_interactive,
         config_path=config_path,
     )
 
 
 def _parse_orchestrator_follow_up(raw_args: list[str]) -> OrchestratorFollowUpOptions:
-    parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("run_id")
-    parser.add_argument("--message", default="")
-    parser.add_argument("--type", default="clarify")
-    parser.add_argument("--target", default="")
-    parser.add_argument("--all", action="store_true")
-    parser.add_argument("--stdin", action="store_true")
-    try:
-        namespace, extras = parser.parse_known_args(raw_args)
-    except SystemExit as error:
-        raise ValueError("invalid orchestrator follow-up options") from error
-    if extras:
-        raise ValueError(
-            f"unexpected orchestrator follow-up arguments: {' '.join(extras)}"
-        )
-    message = sys.stdin.read() if namespace.stdin else namespace.message
-    return OrchestratorFollowUpOptions(
-        run_id=namespace.run_id.strip(),
-        message=message.strip(),
-        kind=namespace.type.strip(),
-        target=namespace.target.strip(),
-        all_children=namespace.all,
+    options: OrchestratorFollowUpOptions = parse_typer_args(
+        _ORCHESTRATOR_FOLLOW_UP_PARSER,
+        raw_args,
+        prog_name="pid orchestrator follow-up",
+        error_message="invalid orchestrator follow-up options",
     )
+    return options
 
 
 def _orchestrator_status(state: dict[str, object], store: RunStore) -> str:

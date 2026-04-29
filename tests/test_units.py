@@ -10,8 +10,8 @@ import sys
 from pathlib import Path
 from typing import Any, cast
 
-import click
 import pytest
+import typer
 
 import pid
 import pid.config as config_module
@@ -326,7 +326,7 @@ def test_interactive_display_tty_width_matches_terminal(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "pid.interactive.click.get_text_stream", lambda _name: TTYStream()
+        "pid.interactive.typer.get_text_stream", lambda _name: TTYStream()
     )
     monkeypatch.setattr(
         "pid.interactive.shutil.get_terminal_size",
@@ -353,7 +353,7 @@ def test_interactive_display_clears_previous_tty_render(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        "pid.interactive.click.get_text_stream", lambda _name: TTYStream()
+        "pid.interactive.typer.get_text_stream", lambda _name: TTYStream()
     )
     display = interactive_module._InteractiveDisplay()
     values = {
@@ -375,7 +375,7 @@ def test_interactive_display_clears_validation_error_tty_render(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        "pid.interactive.click.get_text_stream", lambda _name: TTYStream()
+        "pid.interactive.typer.get_text_stream", lambda _name: TTYStream()
     )
     display = interactive_module._InteractiveDisplay()
     values = {
@@ -397,7 +397,7 @@ def test_interactive_display_clears_wrapped_prompt_input(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        "pid.interactive.click.get_text_stream", lambda _name: TTYStream()
+        "pid.interactive.typer.get_text_stream", lambda _name: TTYStream()
     )
     monkeypatch.setattr(
         "pid.interactive.shutil.get_terminal_size",
@@ -427,8 +427,8 @@ def test_resolve_interactive_args_prompts_all_values_when_empty(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     answers = iter(["3", "high", "feature/new-cli", "add guided prompts"])
-    monkeypatch.setattr("pid.interactive.click.prompt", lambda *_, **__: next(answers))
-    monkeypatch.setattr("pid.interactive.click.confirm", lambda *_, **__: True)
+    monkeypatch.setattr("pid.interactive.typer.prompt", lambda *_, **__: next(answers))
+    monkeypatch.setattr("pid.interactive.typer.confirm", lambda *_, **__: True)
 
     assert resolve_interactive_args([], PIDConfig()) == [
         "3",
@@ -444,8 +444,8 @@ def test_resolve_agent_start_args_prompts_missing_values(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     answers = iter(["2", "high", "feature/agent-flow", "polish startup"])
-    monkeypatch.setattr("pid.interactive.click.prompt", lambda *_, **__: next(answers))
-    monkeypatch.setattr("pid.interactive.click.confirm", lambda *_, **__: True)
+    monkeypatch.setattr("pid.interactive.typer.prompt", lambda *_, **__: next(answers))
+    monkeypatch.setattr("pid.interactive.typer.confirm", lambda *_, **__: True)
 
     assert resolve_agent_start_args([], PIDConfig()) == [
         "--branch",
@@ -462,8 +462,8 @@ def test_resolve_agent_start_args_prompts_missing_values(
 def test_resolve_agent_start_args_prompts_only_missing_prompt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("pid.interactive.click.prompt", lambda *_, **__: "build thing")
-    monkeypatch.setattr("pid.interactive.click.confirm", lambda *_, **__: True)
+    monkeypatch.setattr("pid.interactive.typer.prompt", lambda *_, **__: "build thing")
+    monkeypatch.setattr("pid.interactive.typer.confirm", lambda *_, **__: True)
 
     assert resolve_agent_start_args(["--branch", "feature/x"], PIDConfig()) == [
         "--branch",
@@ -501,7 +501,7 @@ def test_resolve_agent_start_args_preserves_non_promptable_inputs() -> None:
 def test_resolve_agent_start_args_preserves_start_options(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("pid.interactive.click.prompt", lambda *_, **__: "build thing")
+    monkeypatch.setattr("pid.interactive.typer.prompt", lambda *_, **__: "build thing")
 
     assert resolve_agent_start_args(
         [
@@ -537,10 +537,10 @@ def test_resolve_agent_start_args_preserves_start_options(
 def test_resolve_agent_start_args_aborts_on_rejected_confirmation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("pid.interactive.click.prompt", lambda *_, **__: "build thing")
-    monkeypatch.setattr("pid.interactive.click.confirm", lambda *_, **__: False)
+    monkeypatch.setattr("pid.interactive.typer.prompt", lambda *_, **__: "build thing")
+    monkeypatch.setattr("pid.interactive.typer.confirm", lambda *_, **__: False)
 
-    with pytest.raises(click.Abort):
+    with pytest.raises(typer.Abort):
         resolve_agent_start_args(["--branch", "feature/x"], PIDConfig())
 
 
@@ -548,8 +548,8 @@ def test_resolve_orchestrator_start_args_prompts_happy_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     answers = iter(["Ship larger change", "", "feat", "0", "2"])
-    monkeypatch.setattr("pid.interactive.click.prompt", lambda *_, **__: next(answers))
-    monkeypatch.setattr("pid.interactive.click.confirm", lambda *_, **__: True)
+    monkeypatch.setattr("pid.interactive.typer.prompt", lambda *_, **__: next(answers))
+    monkeypatch.setattr("pid.interactive.typer.confirm", lambda *_, **__: True)
 
     assert resolve_orchestrator_start_args([], PIDConfig()) == [
         "--goal",
@@ -582,7 +582,7 @@ def test_resolve_orchestrator_start_args_preserves_start_options(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "pid.interactive.click.prompt", lambda *_, **__: "Ship larger change"
+        "pid.interactive.typer.prompt", lambda *_, **__: "Ship larger change"
     )
 
     assert resolve_orchestrator_start_args(
@@ -603,18 +603,18 @@ def test_resolve_orchestrator_start_args_preserves_start_options(
 def test_resolve_orchestrator_start_args_aborts_on_rejected_confirmation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("pid.interactive.click.prompt", lambda *_, **__: "goal")
-    monkeypatch.setattr("pid.interactive.click.confirm", lambda *_, **__: False)
+    monkeypatch.setattr("pid.interactive.typer.prompt", lambda *_, **__: "goal")
+    monkeypatch.setattr("pid.interactive.typer.confirm", lambda *_, **__: False)
 
-    with pytest.raises(click.Abort):
+    with pytest.raises(typer.Abort):
         resolve_orchestrator_start_args(["--branch-prefix", "feat"], PIDConfig())
 
 
 def test_resolve_interactive_args_prompts_only_missing_prompt(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("pid.interactive.click.prompt", lambda *_, **__: "build thing")
-    monkeypatch.setattr("pid.interactive.click.confirm", lambda *_, **__: True)
+    monkeypatch.setattr("pid.interactive.typer.prompt", lambda *_, **__: "build thing")
+    monkeypatch.setattr("pid.interactive.typer.confirm", lambda *_, **__: True)
 
     assert resolve_interactive_args(["feature/x"], PIDConfig()) == [
         "feature/x",
@@ -638,8 +638,8 @@ def test_resolve_interactive_args_prompts_branch_after_thinking(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     answers = iter(["feature/x", "build thing"])
-    monkeypatch.setattr("pid.interactive.click.prompt", lambda *_, **__: next(answers))
-    monkeypatch.setattr("pid.interactive.click.confirm", lambda *_, **__: True)
+    monkeypatch.setattr("pid.interactive.typer.prompt", lambda *_, **__: next(answers))
+    monkeypatch.setattr("pid.interactive.typer.confirm", lambda *_, **__: True)
 
     assert resolve_interactive_args(["high"], PIDConfig()) == [
         "high",
@@ -653,8 +653,8 @@ def test_resolve_interactive_args_reprompts_invalid_values(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     answers = iter(["0", "2", "bad", "medium", "", "feature/x", "build"])
-    monkeypatch.setattr("pid.interactive.click.prompt", lambda *_, **__: next(answers))
-    monkeypatch.setattr("pid.interactive.click.confirm", lambda *_, **__: True)
+    monkeypatch.setattr("pid.interactive.typer.prompt", lambda *_, **__: next(answers))
+    monkeypatch.setattr("pid.interactive.typer.confirm", lambda *_, **__: True)
 
     assert resolve_interactive_args([], PIDConfig()) == [
         "2",
@@ -667,10 +667,10 @@ def test_resolve_interactive_args_reprompts_invalid_values(
 def test_resolve_interactive_args_abort_on_rejected_confirmation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("pid.interactive.click.prompt", lambda *_, **__: "feature/x")
-    monkeypatch.setattr("pid.interactive.click.confirm", lambda *_, **__: False)
+    monkeypatch.setattr("pid.interactive.typer.prompt", lambda *_, **__: "feature/x")
+    monkeypatch.setattr("pid.interactive.typer.confirm", lambda *_, **__: False)
 
-    with pytest.raises(click.Abort):
+    with pytest.raises(typer.Abort):
         resolve_interactive_args(["high"], PIDConfig())
 
 
@@ -680,7 +680,7 @@ def test_resolve_interactive_args_preserves_invalid_supplied_attempts(
     def fail_prompt(*_args: object, **_kwargs: object) -> str:
         raise AssertionError("invalid supplied attempts should not prompt")
 
-    monkeypatch.setattr("pid.interactive.click.prompt", fail_prompt)
+    monkeypatch.setattr("pid.interactive.typer.prompt", fail_prompt)
 
     assert resolve_interactive_args(["0"], PIDConfig()) == ["0"]
 
@@ -716,7 +716,7 @@ def test_main_resolves_interactive_args_when_stdin_is_tty(
     monkeypatch.setattr(cli_module, "resolve_interactive_args", fake_resolve)
     monkeypatch.setattr(cli_module, "run_pid", fake_run_pid)
 
-    with pytest.raises(click.exceptions.Exit) as exc_info:
+    with pytest.raises(typer.Exit) as exc_info:
         cli_module.main(cast(Any, FakeContext()), args=["feature/x"], config=None)
 
     assert exc_info.value.exit_code == 7

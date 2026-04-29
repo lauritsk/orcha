@@ -19,13 +19,7 @@ from tests.fakes import assert_success, base_state, calls, run_pid
 
 
 def run_engine_step(flow: PIDFlow, context: Any, step: WorkflowStep) -> None:
-    flow.engine.execute_step(
-        context,
-        step,
-        flow.registry,
-        checkpoint=flow.apply_queued_followups,
-        current_step_callback=flow._set_current_step,
-    )
+    flow.execute_step(context, step)
 
 
 DEMO_EXTENSION = "\n".join(

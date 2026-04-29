@@ -289,13 +289,7 @@ def test_workflow_engine_persists_step_start_end_and_failure(tmp_path: Path) -> 
         SimpleNamespace(scratch={}, emit=lambda *_args, **_kwargs: None),
     )
 
-    flow.engine.execute_step(
-        ctx,
-        WorkflowStep("extra_step", lambda _ctx: None),
-        flow.registry,
-        checkpoint=flow.apply_queued_followups,
-        current_step_callback=flow._set_current_step,
-    )
+    flow.execute_step(ctx, WorkflowStep("extra_step", lambda _ctx: None))
 
     state = store.read_state(run_id)
     step_state = state["workflow"]["steps"]["extra_step"]
@@ -307,13 +301,7 @@ def test_workflow_engine_persists_step_start_end_and_failure(tmp_path: Path) -> 
         raise RuntimeError("boom")
 
     with pytest.raises(RuntimeError, match="boom"):
-        flow.engine.execute_step(
-            ctx,
-            WorkflowStep("bad_step", fail_step),
-            flow.registry,
-            checkpoint=flow.apply_queued_followups,
-            current_step_callback=flow._set_current_step,
-        )
+        flow.execute_step(ctx, WorkflowStep("bad_step", fail_step))
 
     state = store.read_state(run_id)
     failed = state["workflow"]["steps"]["bad_step"]

@@ -5,7 +5,7 @@ from __future__ import annotations
 import shutil
 import sys
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 
 from pid.commands import CommandRunner, require_command
@@ -185,28 +185,15 @@ class PIDFlow:
         ctx.emit("workflow.created")
         try:
             bootstrap_steps = self.bootstrap_steps()
-            for step in bootstrap_steps:
-                self.engine.execute_step(
-                    ctx,
-                    step,
-                    self.registry,
-                    checkpoint=self.apply_queued_followups,
-                    current_step_callback=self._set_current_step,
-                )
+            self.execute_steps(ctx, bootstrap_steps)
             self.load_project_extensions(ctx)
             self.apply_service_replacements(ctx)
-            for step in self.registry.resolve_steps(
+            default_steps = self.registry.resolve_steps(
                 self.default_steps(),
                 known_steps=(step.name for step in bootstrap_steps),
                 external_steps=self.pr_loop_step_names(),
-            ):
-                self.engine.execute_step(
-                    ctx,
-                    step,
-                    self.registry,
-                    checkpoint=self.apply_queued_followups,
-                    current_step_callback=self._set_current_step,
-                )
+            )
+            self.execute_steps(ctx, default_steps)
             ctx.emit("workflow.completed")
         except Exception as error:
             ctx.emit(
@@ -248,6 +235,25 @@ class PIDFlow:
         """Project engine current-step state onto supervised run state."""
 
         self.current_step = step_name
+
+    def execute_step(self, ctx: WorkflowContext, step: WorkflowStep) -> None:
+        """Run one workflow step through the durable engine."""
+
+        self.engine.execute_step(
+            ctx,
+            step,
+            self.registry,
+            checkpoint=self.apply_queued_followups,
+            current_step_callback=self._set_current_step,
+        )
+
+    def execute_steps(
+        self, ctx: WorkflowContext, steps: Iterable[WorkflowStep]
+    ) -> None:
+        """Run workflow steps through the durable engine in order."""
+
+        for step in steps:
+            self.execute_step(ctx, step)
 
     def apply_queued_followups(self, ctx: WorkflowContext, step_name: str) -> None:
         """Apply durable run follow-ups at safe workflow checkpoints."""
@@ -665,52 +671,13 @@ class PIDFlow:
         """Run the extension-aware PR attempt loop."""
 
         parsed = ctx.require_parsed()
-        ctx.pr_loop = PRLoopState(
-            message_state_hash=self.repository.state_hash(ctx.worktree_path),
-            checks_timeout_seconds=env_int(
-                "PID_CHECKS_TIMEOUT_SECONDS",
-                self.config.workflow.checks_timeout_seconds,
-            ),
-            checks_poll_interval_seconds=env_int(
-                "PID_CHECKS_POLL_INTERVAL_SECONDS",
-                self.config.workflow.checks_poll_interval_seconds,
-            ),
-            merge_retry_limit=env_int(
-                "PID_MERGE_RETRY_LIMIT", self.config.workflow.merge_retry_limit
-            ),
-        )
-        ctx.base_refresh_count = 0
-        ctx.base_refresh_stage_counts = {}
-        ctx.merge_retries = 0
-        ctx.attempt = 1
-
-        pr_loop_steps = self.registry.resolve_steps(
-            self.default_pr_loop_steps(),
-            external_steps=(
-                *(step.name for step in self.bootstrap_steps()),
-                *(step.name for step in self.default_steps()),
-            ),
-            include_unanchored=False,
-        )
+        self.initialize_pr_loop(ctx)
+        pr_loop_steps = self.resolved_pr_loop_steps()
 
         while ctx.attempt <= parsed.max_attempts:
-            ctx.pr_loop.next_iteration = False
-            ctx.pr_loop.merge_result = None
-            ctx.pr_loop.pr_head_oid = ""
-            ctx.pr_loop.merge_confirmed = False
-            ctx.pr_loop.refreshed_before_message = False
-            ctx.pr_loop.refresh_stage = ""
-            ctx.pr_loop.refresh_result = ""
-            ctx.checks_status = 0
-            ctx.checks_output = ""
+            self.reset_pr_attempt_state(ctx)
             for step in pr_loop_steps:
-                self.engine.execute_step(
-                    ctx,
-                    step,
-                    self.registry,
-                    checkpoint=self.apply_queued_followups,
-                    current_step_callback=self._set_current_step,
-                )
+                self.execute_step(ctx, step)
                 if ctx.pr_loop.completed:
                     return
                 if ctx.pr_loop.next_iteration:
@@ -733,6 +700,53 @@ class PIDFlow:
             f"{parsed.max_attempts} attempts; leaving worktree: {ctx.worktree_path}"
         )
         abort(1)
+
+    def initialize_pr_loop(self, ctx: WorkflowContext) -> None:
+        """Initialize PR-loop state before the first attempt."""
+
+        ctx.pr_loop = PRLoopState(
+            message_state_hash=self.repository.state_hash(ctx.worktree_path),
+            checks_timeout_seconds=env_int(
+                "PID_CHECKS_TIMEOUT_SECONDS",
+                self.config.workflow.checks_timeout_seconds,
+            ),
+            checks_poll_interval_seconds=env_int(
+                "PID_CHECKS_POLL_INTERVAL_SECONDS",
+                self.config.workflow.checks_poll_interval_seconds,
+            ),
+            merge_retry_limit=env_int(
+                "PID_MERGE_RETRY_LIMIT", self.config.workflow.merge_retry_limit
+            ),
+        )
+        ctx.base_refresh_count = 0
+        ctx.base_refresh_stage_counts = {}
+        ctx.merge_retries = 0
+        ctx.attempt = 1
+
+    def resolved_pr_loop_steps(self) -> list[WorkflowStep]:
+        """Return extension-resolved PR-loop steps."""
+
+        return self.registry.resolve_steps(
+            self.default_pr_loop_steps(),
+            external_steps=(
+                *(step.name for step in self.bootstrap_steps()),
+                *(step.name for step in self.default_steps()),
+            ),
+            include_unanchored=False,
+        )
+
+    def reset_pr_attempt_state(self, ctx: WorkflowContext) -> None:
+        """Reset per-attempt PR-loop fields before running substeps."""
+
+        ctx.pr_loop.next_iteration = False
+        ctx.pr_loop.merge_result = None
+        ctx.pr_loop.pr_head_oid = ""
+        ctx.pr_loop.merge_confirmed = False
+        ctx.pr_loop.refreshed_before_message = False
+        ctx.pr_loop.refresh_stage = ""
+        ctx.pr_loop.refresh_result = ""
+        ctx.checks_status = 0
+        ctx.checks_output = ""
 
     def run_policy(
         self,
@@ -843,20 +857,8 @@ class PIDFlow:
         )
         self.regenerate_context_message(ctx)
         ctx.pr_loop.need_force_push = True
-        self.engine.execute_step(
-            ctx,
-            WorkflowStep("pr_push_branch", self.step_pr_push_branch),
-            self.registry,
-            checkpoint=self.apply_queued_followups,
-            current_step_callback=self._set_current_step,
-        )
-        self.engine.execute_step(
-            ctx,
-            WorkflowStep("pr_ensure_pr", self.step_pr_ensure_pr),
-            self.registry,
-            checkpoint=self.apply_queued_followups,
-            current_step_callback=self._set_current_step,
-        )
+        self.execute_step(ctx, WorkflowStep("pr_push_branch", self.step_pr_push_branch))
+        self.execute_step(ctx, WorkflowStep("pr_ensure_pr", self.step_pr_ensure_pr))
         ctx.merge_retries = 0
         ctx.pr_loop.next_iteration = True
 

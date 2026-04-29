@@ -52,6 +52,39 @@ def review_display_target_for(commit_count: int, dirty: bool) -> str:
     return "verify requested work is complete"
 
 
+BASE_REFRESH_STAGE_LABELS = {
+    "before_message": "before commit message",
+    "before_pr": "before PR push",
+    "after_checks": "after checks",
+}
+
+BASE_REFRESH_RESULT_LABELS = {
+    "limit_reached": "refresh limit reached",
+    "conflict_unresolved": "rebase conflict needs manual cleanup",
+    "rebased_cleanly": "rebased cleanly",
+    "rebased_with_agent_fix": "rebased after agent conflict fix",
+    "unchanged": "already up to date",
+}
+
+
+def base_refresh_stage_label(stage: str) -> str:
+    """Return a concise display label for a base-refresh stage."""
+
+    return BASE_REFRESH_STAGE_LABELS.get(stage, stage.replace("_", " "))
+
+
+def base_refresh_result_label(result: str) -> str:
+    """Return a concise display label for a base-refresh result."""
+
+    return BASE_REFRESH_RESULT_LABELS.get(result, result.replace("_", " "))
+
+
+def workflow_step_label(name: str) -> str:
+    """Return a readable label for workflow step names."""
+
+    return name.replace("_", " ")
+
+
 def review_target_for(base_rev: str, commit_count: int, dirty: bool) -> str:
     """Describe what the review agent pass should inspect."""
 

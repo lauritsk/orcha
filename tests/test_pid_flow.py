@@ -650,7 +650,7 @@ def test_dirty_work_is_committed_then_pr_created_and_merged(tmp_path: Path) -> N
     )
 
     assert_success(process)
-    assert "Created" in process.stdout
+    assert "pid: created worktree" in process.stdout
     assert "pid: PR attempt 1/2" in process.stdout
     assert "pid commit message" in process.stdout
     assert "pid github squash merged" in process.stdout
@@ -1188,7 +1188,9 @@ base_refresh_stages = ["before_message"]
     )
 
     assert_success(process)
-    assert "before_message base moved; rebasing onto origin/main" in process.stdout
+    assert (
+        "base moved before commit message; rebasing onto origin/main" in process.stdout
+    )
     assert final_state["message_index"] == 2
 
 
@@ -1200,7 +1202,7 @@ def test_before_pr_base_refresh_rebases_before_first_push(tmp_path: Path) -> Non
     )
 
     assert_success(process)
-    assert "before_pr base moved; rebasing onto origin/main" in process.stdout
+    assert "base moved before PR push; rebasing onto origin/main" in process.stdout
     assert calls(final_state, "git", "fetch", "origin", "main")
     assert calls(final_state, "git", "rebase", "origin/main")
     assert ["push", "--force-with-lease", "-u", "origin", "feature/cool-stuff"] in [
@@ -1233,7 +1235,7 @@ base_refresh_stages = ["before_pr", "after_checks"]
     )
 
     assert_success(process)
-    assert "after_checks base moved; rebasing onto origin/main" in process.stdout
+    assert "base moved after checks; rebasing onto origin/main" in process.stdout
     assert final_state["checks_index"] == 2
     assert ["push", "--force-with-lease", "-u", "origin", "feature/cool-stuff"] in [
         call["args"][-5:] for call in calls(final_state, "git", "push")
@@ -1258,7 +1260,9 @@ base_refresh_limit = 0
 
     assert process.returncode == 1
     assert "base refresh limit reached" in process.stderr
-    assert "base refresh stopped before PR push: limit_reached" in process.stderr
+    assert (
+        "base refresh stopped before PR push: refresh limit reached" in process.stderr
+    )
 
 
 def test_base_refresh_conflict_without_agent_fix_stops(tmp_path: Path) -> None:
@@ -1283,7 +1287,10 @@ base_refresh_agent_conflict_fix = false
 
     assert process.returncode == 1
     assert "base refresh rebase conflicted" in process.stderr
-    assert "base refresh stopped before PR push: conflict_unresolved" in process.stderr
+    assert (
+        "base refresh stopped before PR push: rebase conflict needs manual cleanup"
+        in process.stderr
+    )
     assert not [
         call for call in final_state["pi_calls"] if call["kind"] == "rebase_fix"
     ]
@@ -1324,7 +1331,10 @@ def test_base_refresh_stops_if_agent_leaves_rebase_in_progress(tmp_path: Path) -
 
     assert process.returncode == 1
     assert "base refresh rebase still in progress after agent" in process.stderr
-    assert "base refresh stopped before PR push: conflict_unresolved" in process.stderr
+    assert (
+        "base refresh stopped before PR push: rebase conflict needs manual cleanup"
+        in process.stderr
+    )
 
 
 def test_merge_failure_rebases_force_pushes_and_retries(tmp_path: Path) -> None:

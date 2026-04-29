@@ -48,10 +48,13 @@ from pid.prompts import (
 from pid.repository import Repository, validate_branch_name
 from pid.session_logging import SessionLogger
 from pid.utils import (
+    base_refresh_result_label,
+    base_refresh_stage_label,
     env_int,
     has_output,
     review_display_target_for,
     review_target_for,
+    workflow_step_label,
     worktree_path_for,
 )
 
@@ -260,7 +263,10 @@ class PIDFlow:
             if result.action == "retry":
                 retries += 1
                 if retries > 3:
-                    echo_err(f"pid: step retry limit reached: {step.name}")
+                    echo_err(
+                        "pid: step retry limit reached: "
+                        f"{workflow_step_label(step.name)}"
+                    )
                     abort(1)
                 ctx.emit("step.retrying", step=step.name, message=result.reason)
                 continue
@@ -388,7 +394,7 @@ class PIDFlow:
         self.repository.create_worktree(
             ctx.main_worktree, ctx.worktree_path, parsed.branch, ctx.base_rev
         )
-        echo_out(f"Created {ctx.worktree_path} on branch {parsed.branch}")
+        echo_out(f"pid: created worktree {ctx.worktree_path} on branch {parsed.branch}")
 
     def step_trust_mise(self, ctx: WorkflowContext) -> None:
         if self.config.workflow.trust_mise and shutil.which("mise") is not None:
@@ -1006,7 +1012,10 @@ class PIDFlow:
 
         if refresh_result not in REFRESH_STOP_RESULTS:
             return
-        echo_err(f"pid: base refresh stopped {stage}: {refresh_result}")
+        echo_err(
+            f"pid: base refresh stopped {stage}: "
+            f"{base_refresh_result_label(refresh_result)}"
+        )
         abort(1)
 
     def push_pr_branch(
@@ -1103,7 +1112,8 @@ class PIDFlow:
         base_refresh_count += 1
         stage_counts[stage] = stage_counts.get(stage, 0) + 1
         message = (
-            f"pid: {stage} base moved; rebasing onto origin/{default_branch} "
+            f"pid: base moved {base_refresh_stage_label(stage)}; "
+            f"rebasing onto origin/{default_branch} "
             f"({base_refresh_count}/{self.config.workflow.base_refresh_limit})"
         )
         echo_out(message)
@@ -1341,7 +1351,7 @@ class PIDFlow:
         )
         if bumped_level != followup_thinking_level:
             echo_out(
-                "pid: review-rejected follow-up completed; next "
+                "pid: review follow-up completed; next "
                 f"{self.config.agent.label} thinking bumped to {bumped_level}"
             )
         return bumped_level

@@ -31,7 +31,15 @@ from pid.output import (
 from pid.parsing import bump_thinking, parse_args
 from pid.repository import Repository
 from pid.session_logging import CommandLogHandle, SessionLogger
-from pid.utils import env_int, has_output, review_display_target_for, worktree_path_for
+from pid.utils import (
+    base_refresh_result_label,
+    base_refresh_stage_label,
+    env_int,
+    has_output,
+    review_display_target_for,
+    workflow_step_label,
+    worktree_path_for,
+)
 from pid.workflow import PIDFlow
 
 
@@ -580,6 +588,37 @@ def test_review_display_target_for_user_facing_scope(
     commit_count: int, dirty: bool, expected: str
 ) -> None:
     assert review_display_target_for(commit_count, dirty) == expected
+
+
+@pytest.mark.parametrize(
+    ("stage", "expected"),
+    [
+        ("before_message", "before commit message"),
+        ("before_pr", "before PR push"),
+        ("after_checks", "after checks"),
+        ("custom_stage", "custom stage"),
+    ],
+)
+def test_base_refresh_stage_label(stage: str, expected: str) -> None:
+    assert base_refresh_stage_label(stage) == expected
+
+
+@pytest.mark.parametrize(
+    ("result", "expected"),
+    [
+        ("limit_reached", "refresh limit reached"),
+        ("conflict_unresolved", "rebase conflict needs manual cleanup"),
+        ("custom_result", "custom result"),
+    ],
+)
+def test_base_refresh_result_label(result: str, expected: str) -> None:
+    assert base_refresh_result_label(result) == expected
+
+
+def test_workflow_step_label_removes_internal_underscores() -> None:
+    assert (
+        workflow_step_label("pr_refresh_base_before_pr") == "pr refresh base before pr"
+    )
 
 
 def test_utils_env_int_and_path_helpers(

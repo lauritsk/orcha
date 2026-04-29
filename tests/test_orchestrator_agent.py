@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import stat
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
@@ -10,13 +11,15 @@ import pytest
 from pid.cli import _parse_agent_start, _run_agent_command, _run_status, _runs_table
 from pid.commands import CommandRunner
 from pid.config import OrchestratorConfig, PIDConfig, parse_config
-from pid.events import ListEventSink, WorkflowEvent
-from pid.failures import FailureKind, failure_from_abort
 from pid.context import WorkflowContext
+from pid.events import ListEventSink, WorkflowEvent
+from pid.extensions import ExtensionError
+from pid.failures import FailureKind, WorkflowFailure, failure_from_abort
 from pid.models import CommandResult, OutputMode
 from pid.orchestrator import AgentStartOptions, OrchestratorAgent, workflow_argv
 from pid.policy import DeterministicRecoveryPolicy, RecoveryActionKind
 from pid.run_state import RunEventSink, RunStore, project_event
+from pid.workflow import PIDFlow
 from tests.fakes import assert_success, base_state, combined_output, run_pid
 
 
@@ -65,6 +68,9 @@ def test_run_store_persists_wrapped_events_outside_worktree(tmp_path: Path) -> N
     assert state_data["current_step"] == "x"
     assert "[REDACTED]" in state_data["prompt_summary"]
     assert json.loads(event_line)["run_id"] == state["run_id"]
+    assert stat.S_IMODE(run_dir.stat().st_mode) == 0o700
+    assert stat.S_IMODE((run_dir / "state.json").stat().st_mode) == 0o600
+    assert stat.S_IMODE((run_dir / "events.jsonl").stat().st_mode) == 0o600
     assert not (repo / "pid" / "runs").exists()
 
 
@@ -200,6 +206,10 @@ def test_cli_agent_formatters_and_parser() -> None:
         _parse_agent_start(["--branch", "x", "--prompt", "p", "--attempts", "0"])
     with pytest.raises(ValueError, match="unexpected"):
         _parse_agent_start(["--branch", "x", "--prompt", "p", "extra"])
+    with pytest.raises(ValueError, match="non-empty"):
+        _parse_agent_start(["--branch", " ", "--prompt", "p"])
+    with pytest.raises(ValueError, match="non-empty"):
+        _parse_agent_start(["--branch", "x", "--prompt", " "])
     with pytest.raises(ValueError, match="invalid"):
         _parse_agent_start([])
 
@@ -290,6 +300,13 @@ def test_run_agent_command_status_runs_and_errors(
         output_mode=OutputMode.NORMAL,
     )
     assert pi_advisor == 2
+    invalid_thinking = _run_agent_command(
+        ["start", "--branch", "x", "--prompt", "p", "--thinking", "bogus"],
+        config=config,
+        output_mode=OutputMode.NORMAL,
+    )
+    assert invalid_thinking == 2
+    assert len(store.list_runs(limit=10)) == 1
 
 
 def test_failure_policy_and_orchestrator_helpers(tmp_path: Path) -> None:
@@ -346,6 +363,25 @@ def test_failure_policy_and_orchestrator_helpers(tmp_path: Path) -> None:
     agent = OrchestratorAgent(config=PIDConfig(), store=RunStore(tmp_path / "runs"))
     with pytest.raises(ValueError, match="only deterministic"):
         agent.start(AgentStartOptions(branch="x", prompt="p", advisor="pi"))
+
+
+def test_run_supervised_records_extension_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    flow = PIDFlow(load_extensions=False)
+    flow.current_step = "run_initial_agent"
+
+    def raise_extension(_argv: list[str]) -> None:
+        raise ExtensionError("bad extension")
+
+    monkeypatch.setattr(flow, "_run", raise_extension)
+
+    with pytest.raises(WorkflowFailure) as caught:
+        flow.run_supervised(["feature/x", "prompt"])
+
+    assert caught.value.kind == FailureKind.EXTENSION_FAILED
+    assert caught.value.step == "run_initial_agent"
+    assert caught.value.code == 2
 
 
 def test_pid_run_command_keeps_main_workflow(tmp_path: Path) -> None:

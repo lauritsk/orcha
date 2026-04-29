@@ -22,7 +22,7 @@ from pid.extensions import (
     load_enabled_extensions,
     normalize_step_result,
 )
-from pid.failures import WorkflowFailure, failure_from_abort
+from pid.failures import FailureKind, WorkflowFailure, failure_from_abort
 from pid.github import Forge
 from pid.keepawake import KeepAwake
 from pid.messages import parse_commit_message
@@ -144,9 +144,15 @@ class PIDFlow:
             ) from error
         except WorkflowFailure:
             raise
-        except ExtensionError:
+        except ExtensionError as error:
             exit_code = 2
-            raise
+            raise WorkflowFailure(
+                kind=FailureKind.EXTENSION_FAILED,
+                step=self.current_step or "extensions",
+                code=2,
+                message=str(error),
+                recoverable=False,
+            ) from error
         except Exception:
             exit_code = 1
             raise

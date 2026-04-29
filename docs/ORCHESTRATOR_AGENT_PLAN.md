@@ -127,6 +127,7 @@ class FailureKind(StrEnum):
     MERGE_FAILED = "merge_failed"
     REBASE_IN_PROGRESS = "rebase_in_progress"
     CLEANUP_FAILED = "cleanup_failed"
+    EXTENSION_FAILED = "extension_failed"
 
 
 @dataclass(frozen=True)
@@ -198,9 +199,9 @@ recovery steps.
 Add `src/pid/run_state.py`:
 
 - Generate monotonic, sortable run IDs.
-- Create per-run directories under the common git dir.
+- Create per-run directories under the common git dir with private permissions.
 - Append wrapped events to `events.jsonl`.
-- Atomically write `state.json`.
+- Atomically write `state.json` with private file permissions.
 - Project workflow events into user-facing run state.
 - Store redacted diagnostics separately.
 

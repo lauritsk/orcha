@@ -222,7 +222,8 @@ store_dir = "/var/lib/pid/runs"
 ```
 
 When `store_dir` is empty, `pid agent` writes under
-`<git-common-dir>/pid/runs/`, outside the worktree.
+`<git-common-dir>/pid/runs/`, outside the worktree. Run directories and state
+files are created with user-private permissions where supported.
 
 ### Agent examples
 

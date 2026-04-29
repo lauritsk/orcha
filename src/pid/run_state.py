@@ -106,7 +106,8 @@ class RunStore:
 
         run_id = generate_run_id()
         paths = self.paths(run_id)
-        paths.diagnostics.mkdir(parents=True, exist_ok=False)
+        _ensure_private_dir(paths.directory, exist_ok=False)
+        _ensure_private_dir(paths.diagnostics)
         now = utc_now()
         state: dict[str, Any] = {
             "run_id": run_id,
@@ -139,14 +140,16 @@ class RunStore:
         """Atomically write state JSON."""
 
         paths = self.paths(run_id)
-        paths.directory.mkdir(parents=True, exist_ok=True)
+        _ensure_private_dir(paths.directory)
         state = redact(state)
         state["updated_at"] = utc_now()
         temp = paths.state.with_suffix(".json.tmp")
-        temp.write_text(
-            json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-        )
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+        file_descriptor = os.open(temp, flags, 0o600)
+        with os.fdopen(file_descriptor, "w", encoding="utf-8") as stream:
+            stream.write(json.dumps(state, indent=2, sort_keys=True) + "\n")
         os.replace(temp, paths.state)
+        _chmod_if_supported(paths.state, 0o600)
 
     def append_event(self, run_id: str, event: WorkflowEvent) -> dict[str, Any]:
         """Append wrapped workflow event and project it into state."""
@@ -159,9 +162,12 @@ class RunStore:
             "event": redact(event.to_dict()),
         }
         paths = self.paths(run_id)
-        paths.directory.mkdir(parents=True, exist_ok=True)
-        with paths.events.open("a", encoding="utf-8") as stream:
+        _ensure_private_dir(paths.directory)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
+        file_descriptor = os.open(paths.events, flags, 0o600)
+        with os.fdopen(file_descriptor, "a", encoding="utf-8") as stream:
             stream.write(json.dumps(wrapped, sort_keys=True, default=str) + "\n")
+        _chmod_if_supported(paths.events, 0o600)
         state["event_count"] = sequence
         project_event(state, event)
         self.write_state(run_id, state)
@@ -234,6 +240,20 @@ class RunStore:
             if len(states) >= limit:
                 break
         return states
+
+
+def _ensure_private_dir(path: Path, *, exist_ok: bool = True) -> None:
+    """Create a directory readable only by the current user when possible."""
+
+    path.mkdir(mode=0o700, parents=True, exist_ok=exist_ok)
+    _chmod_if_supported(path, 0o700)
+
+
+def _chmod_if_supported(path: Path, mode: int) -> None:
+    try:
+        path.chmod(mode)
+    except OSError:
+        return
 
 
 def project_event(state: dict[str, Any], event: WorkflowEvent) -> None:

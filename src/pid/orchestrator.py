@@ -66,6 +66,12 @@ class OrchestratorAgent:
 
         if options.advisor != "policy":
             raise ValueError("only deterministic policy advisor is supported")
+        if (
+            options.thinking
+            and options.thinking not in self.config.agent.thinking_levels
+        ):
+            levels = ", ".join(self.config.agent.thinking_levels)
+            raise ValueError(f"--thinking must be one of: {levels}")
         argv = workflow_argv(
             options, default_thinking=self.config.agent.default_thinking
         )

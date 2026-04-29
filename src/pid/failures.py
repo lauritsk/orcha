@@ -29,6 +29,7 @@ class FailureKind(StrEnum):
     MERGE_FAILED = "merge_failed"
     REBASE_IN_PROGRESS = "rebase_in_progress"
     CLEANUP_FAILED = "cleanup_failed"
+    EXTENSION_FAILED = "extension_failed"
 
 
 @dataclass(frozen=True)

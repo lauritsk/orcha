@@ -276,17 +276,20 @@ def _parse_agent_start(raw_args: list[str]) -> AgentStartOptions:
         raise ValueError("invalid agent start options") from error
     if extras:
         raise ValueError(f"unexpected agent start arguments: {' '.join(extras)}")
+    branch = namespace.branch.strip()
+    prompt = namespace.prompt.strip()
+    thinking = namespace.thinking.strip()
     if namespace.attempts < 1:
         raise ValueError("--attempts must be a positive integer")
-    if not namespace.branch:
+    if not branch:
         raise ValueError("--branch must be non-empty")
-    if not namespace.prompt:
+    if not prompt:
         raise ValueError("--prompt must be non-empty")
     return AgentStartOptions(
-        branch=namespace.branch,
-        prompt=namespace.prompt,
+        branch=branch,
+        prompt=prompt,
         attempts=namespace.attempts,
-        thinking=namespace.thinking,
+        thinking=thinking,
         non_interactive=namespace.non_interactive,
         yes=namespace.yes,
         advisor=namespace.advisor,

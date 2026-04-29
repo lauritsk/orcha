@@ -504,6 +504,13 @@ def cmd_mise(state, args):
     finish(state, 97, err="unhandled mise: " + " ".join(args))
 
 
+def cmd_custom_setup(state, args):
+    state["custom_setup_args"] = args
+    if state.get("custom_setup_fail"):
+        finish(state, 1, err="custom setup failed")
+    finish(state)
+
+
 def main():
     state = load_state()
     cmd = Path(sys.argv[0]).name
@@ -520,6 +527,7 @@ def main():
         "pi": cmd_pi,
         "agentx": cmd_pi,
         "mise": cmd_mise,
+        "custom-setup": cmd_custom_setup,
     }
     if cmd not in dispatch:
         finish(state, 127, err=f"unknown fake command: {cmd}")

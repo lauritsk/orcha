@@ -15,6 +15,7 @@ from pid.errors import abort
 from pid.output import echo_err, echo_out
 
 DEFAULT_THINKING_LEVELS = ("low", "medium", "high", "xhigh")
+DEFAULT_SETUP_COMMAND = ("mise", "trust", ".")
 AGENT_TEMPLATE_FIELDS = ("prompt", "thinking")
 COMMIT_TEMPLATE_FIELDS = ("title",)
 FORGE_TEMPLATE_FIELDS = ("branch", "title", "body", "pr_url", "head_oid")
@@ -45,7 +46,7 @@ rebase_feedback_title = "fix: resolve latest base changes"
 
 [forge]
 command = ["gh"]
-label = "github"
+label = "forge"
 default_branch_args = [
   "repo",
   "view",
@@ -103,7 +104,7 @@ checks_poll_interval_seconds = 10
 merge_confirmation_timeout_seconds = 1800
 merge_confirmation_poll_interval_seconds = 10
 merge_retry_limit = 20
-trust_mise = true
+setup_command = ["mise", "trust", "."]
 base_refresh_enabled = true
 base_refresh_stages = ["before_pr"]
 base_refresh_limit = 3
@@ -287,7 +288,7 @@ class ForgeConfig:
     """Configured forge/PR CLI templates."""
 
     command: tuple[str, ...] = ("gh",)
-    label: str = "github"
+    label: str = "forge"
     default_branch_args: tuple[str, ...] = (
         "repo",
         "view",
@@ -394,7 +395,7 @@ class WorkflowConfig:
     merge_confirmation_timeout_seconds: int = 1800
     merge_confirmation_poll_interval_seconds: int = 10
     merge_retry_limit: int = 20
-    trust_mise: bool = True
+    setup_command: tuple[str, ...] = DEFAULT_SETUP_COMMAND
     base_refresh_enabled: bool = True
     base_refresh_stages: tuple[str, ...] = ("before_pr",)
     base_refresh_limit: int = 3
@@ -903,6 +904,7 @@ def parse_workflow_config(data: Any, path: Path) -> WorkflowConfig:
             "merge_confirmation_timeout_seconds",
             "merge_confirmation_poll_interval_seconds",
             "merge_retry_limit",
+            "setup_command",
             "trust_mise",
             "base_refresh_enabled",
             "base_refresh_stages",
@@ -943,9 +945,17 @@ def parse_workflow_config(data: Any, path: Path) -> WorkflowConfig:
         path,
         "workflow.merge_retry_limit",
     )
-    trust_mise = boolean_value(
-        data.get("trust_mise", default.trust_mise), path, "workflow.trust_mise"
-    )
+    if "setup_command" in data:
+        setup_command = string_tuple(
+            data.get("setup_command", default.setup_command),
+            path,
+            "workflow.setup_command",
+        )
+    else:
+        trust_mise = boolean_value(
+            data.get("trust_mise", True), path, "workflow.trust_mise"
+        )
+        setup_command = DEFAULT_SETUP_COMMAND if trust_mise else ()
     base_refresh_enabled = boolean_value(
         data.get("base_refresh_enabled", default.base_refresh_enabled),
         path,
@@ -986,6 +996,8 @@ def parse_workflow_config(data: Any, path: Path) -> WorkflowConfig:
         )
     if merge_retry_limit < 0:
         fail_config(path, "workflow.merge_retry_limit must be non-negative")
+    if setup_command and not setup_command[0].strip():
+        fail_config(path, "workflow.setup_command executable must not be empty")
     if base_refresh_limit < 0:
         fail_config(path, "workflow.base_refresh_limit must be non-negative")
     unknown_stages = set(base_refresh_stages) - set(BASE_REFRESH_STAGES)
@@ -1003,7 +1015,7 @@ def parse_workflow_config(data: Any, path: Path) -> WorkflowConfig:
         merge_confirmation_timeout_seconds=merge_confirmation_timeout_seconds,
         merge_confirmation_poll_interval_seconds=merge_confirmation_poll_interval_seconds,
         merge_retry_limit=merge_retry_limit,
-        trust_mise=trust_mise,
+        setup_command=setup_command,
         base_refresh_enabled=base_refresh_enabled,
         base_refresh_stages=base_refresh_stages,
         base_refresh_limit=base_refresh_limit,

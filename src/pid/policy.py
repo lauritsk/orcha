@@ -57,7 +57,7 @@ class DeterministicRecoveryPolicy:
             FailureKind.MISSING_COMMAND,
             FailureKind.DIRTY_MAIN_WORKTREE,
             FailureKind.WORKTREE_EXISTS,
-            FailureKind.MISE_TRUST_FAILED,
+            FailureKind.SETUP_COMMAND_FAILED,
         }:
             return RecoveryAction(
                 RecoveryActionKind.ASK_USER,

@@ -9,7 +9,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from pid.commands import CommandRunner, require_command
-from pid.config import PIDConfig
+from pid.config import DEFAULT_SETUP_COMMAND, PIDConfig
 from pid.context import PRLoopState, WorkflowContext
 from pid.errors import PIDAbort, abort
 from pid.events import EventSink, NullEventSink
@@ -23,7 +23,7 @@ from pid.extensions import (
     normalize_step_result,
 )
 from pid.failures import FailureKind, WorkflowFailure, failure_from_abort
-from pid.github import Forge
+from pid.forge import Forge
 from pid.keepawake import KeepAwake
 from pid.messages import parse_commit_message
 from pid.models import CommandResult, CommitMessage, OutputMode, ParsedArgs
@@ -232,7 +232,7 @@ class PIDFlow:
             WorkflowStep("update_default_branch", self.step_update_default_branch),
             WorkflowStep("capture_base_rev", self.step_capture_base_rev),
             WorkflowStep("create_worktree", self.step_create_worktree),
-            WorkflowStep("trust_mise", self.step_trust_mise),
+            WorkflowStep("run_setup_command", self.step_run_setup_command),
             WorkflowStep("run_initial_agent", self.step_run_initial_agent),
             WorkflowStep("inspect_initial_changes", self.step_inspect_initial_changes),
             WorkflowStep("run_review_agent", self.step_run_review_agent),
@@ -533,9 +533,13 @@ class PIDFlow:
         )
         echo_out(f"pid: created worktree {ctx.worktree_path} on branch {parsed.branch}")
 
-    def step_trust_mise(self, ctx: WorkflowContext) -> None:
-        if self.config.workflow.trust_mise and shutil.which("mise") is not None:
-            self.runner.require(["mise", "trust", "."], cwd=ctx.worktree_path)
+    def step_run_setup_command(self, ctx: WorkflowContext) -> None:
+        command = list(self.config.workflow.setup_command)
+        if not command:
+            return
+        if tuple(command) == DEFAULT_SETUP_COMMAND and shutil.which(command[0]) is None:
+            return
+        self.runner.require(command, cwd=ctx.worktree_path)
 
     def step_run_initial_agent(self, ctx: WorkflowContext) -> None:
         parsed = ctx.require_parsed()

@@ -247,7 +247,7 @@ Most workflow behavior is configurable. Important sections include:
   confirmation, and check polling behavior.
 - `[prompts]`: message, review, CI-fix, and rebase-fix prompt templates.
 - `[workflow]`: check timeouts, merge confirmation, moved-base retry limits,
-  base refresh behavior, and `mise trust` behavior.
+  base refresh behavior, and optional setup command behavior.
 - `[extensions]`: enabled extension modules and local extension paths.
 
 Print the full built-in config with:
@@ -269,6 +269,17 @@ validation_commands = ["mise run check"]
 When `store_dir` is empty, `pid agent` writes under
 `<git-common-dir>/pid/runs/`, outside the worktree. Run directories and state
 files are created with user-private permissions where supported.
+
+Configure any project setup or harness trust command with `setup_command`.
+The default is `["mise", "trust", "."]` and is skipped when `mise` is not on
+`PATH`; set it to `[]` to disable it. Custom setup commands fail the workflow
+when the executable is missing or returns a non-zero exit. Legacy
+`trust_mise = false` still disables the default command.
+
+```toml
+[workflow]
+setup_command = ["mise", "trust", "."]
+```
 
 ### Agent examples
 
@@ -384,7 +395,7 @@ Images from `dhi.io`.
   supervised agent mode, durable state, typed failures, and deterministic
   recovery policy.
 - `src/pid/repository.py`: git, worktree, and commit operations.
-- `src/pid/github.py`: configurable forge/PR CLI operations.
+- `src/pid/forge.py`: configurable forge/PR CLI operations.
 - `src/pid/prompts.py`: agent prompts and untrusted output isolation.
 - `src/pid/commands.py`, `output.py`, `parsing.py`, `utils.py`, `models.py`, and
   `errors.py`: shared support code.

@@ -600,7 +600,7 @@ def test_event_sinks_and_context_helpers(tmp_path: Path) -> None:
     from pid.commands import CommandRunner
     from pid.context import WorkflowContext
     from pid.events import CompositeEventSink, ListEventSink, NullEventSink
-    from pid.github import Forge
+    from pid.forge import Forge
     from pid.models import CommitMessage, ParsedArgs
     from pid.repository import Repository
 
@@ -740,7 +740,7 @@ def test_pid_flow_step_runner_handles_extension_results_and_errors(
 ) -> None:
     from pid.commands import CommandRunner
     from pid.context import WorkflowContext
-    from pid.github import Forge
+    from pid.forge import Forge
     from pid.repository import Repository
 
     config = parse_config({}, tmp_path / "config.toml")
@@ -815,7 +815,7 @@ def test_pid_flow_step_runner_handles_extension_results_and_errors(
 def test_pid_flow_applies_service_replacements(tmp_path: Path) -> None:
     from pid.commands import CommandRunner
     from pid.context import WorkflowContext
-    from pid.github import Forge
+    from pid.forge import Forge
     from pid.repository import Repository
 
     config = parse_config({}, tmp_path / "config.toml")

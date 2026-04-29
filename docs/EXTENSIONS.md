@@ -78,7 +78,7 @@ replace these extension-aware steps:
 5. `update_default_branch`
 6. `capture_base_rev`
 7. `create_worktree`
-8. `trust_mise`
+8. `run_setup_command`
 9. `run_initial_agent`
 10. `inspect_initial_changes`
 11. `run_review_agent`

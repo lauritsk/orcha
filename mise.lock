@@ -190,32 +190,32 @@ url = "https://github.com/goreleaser/goreleaser/releases/download/v2.15.4/gorele
 provenance = "github-attestations"
 
 [[tools.hk]]
-version = "1.44.2"
+version = "1.44.3"
 backend = "aqua:jdx/hk"
 
 [tools.hk."platforms.linux-arm64"]
-checksum = "sha256:075411c60b897504ed6d0ab8d82cab89d376ef9b476e98b2543852aadec71908"
-url = "https://github.com/jdx/hk/releases/download/v1.44.2/hk-aarch64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:85e0f8b7c3107f5b7853390bf8201d3d9839021e3f2d7629f5457f7569218fcc"
+url = "https://github.com/jdx/hk/releases/download/v1.44.3/hk-aarch64-unknown-linux-gnu.tar.gz"
 
 [tools.hk."platforms.linux-arm64-musl"]
-checksum = "sha256:5a595804cf56b1ce1b03659e3202769b1f74a42173a7b31de5c5b03f3c5d9e59"
-url = "https://github.com/jdx/hk/releases/download/v1.44.2/hk-aarch64-unknown-linux-musl.tar.gz"
+checksum = "sha256:1794def830f7bea3e1ab162ea8eb0cef91f9292bb3ce660385f761048cca8599"
+url = "https://github.com/jdx/hk/releases/download/v1.44.3/hk-aarch64-unknown-linux-musl.tar.gz"
 
 [tools.hk."platforms.linux-x64"]
-checksum = "sha256:01b564318f88c2726634c689bea1475d90b8e68e2b67d969442d645cfb1a867f"
-url = "https://github.com/jdx/hk/releases/download/v1.44.2/hk-x86_64-unknown-linux-gnu.tar.gz"
+checksum = "sha256:8ff22722b831acae2ac61eddbe349497f9538ac7ac28f4b1a2e3dd7c0e43ee8c"
+url = "https://github.com/jdx/hk/releases/download/v1.44.3/hk-x86_64-unknown-linux-gnu.tar.gz"
 
 [tools.hk."platforms.linux-x64-musl"]
-checksum = "sha256:4313d2f452c901ec4ccd5af821822444eb364c05f8ce7708854ec115124eabb3"
-url = "https://github.com/jdx/hk/releases/download/v1.44.2/hk-x86_64-unknown-linux-musl.tar.gz"
+checksum = "sha256:41b0fbe9ddec1bf0879b56d05abb9177a8a2fb98a2a6fa3d279576fbc4da5eac"
+url = "https://github.com/jdx/hk/releases/download/v1.44.3/hk-x86_64-unknown-linux-musl.tar.gz"
 
 [tools.hk."platforms.macos-arm64"]
-checksum = "sha256:b1d6b50682055ff7b92a6f17122f6a6a49d03f611199a9a470c19ec70d5df770"
-url = "https://github.com/jdx/hk/releases/download/v1.44.2/hk-aarch64-apple-darwin.tar.gz"
+checksum = "sha256:e9000438928e7c66fd7790f0b47ca9b1c0b971c834238c1fa5faffae7fd92625"
+url = "https://github.com/jdx/hk/releases/download/v1.44.3/hk-aarch64-apple-darwin.tar.gz"
 
 [tools.hk."platforms.windows-x64"]
-checksum = "sha256:58d1c25b42fd103a4df7f549591b46fa7049f1858c3b4ea463123b8b163577d5"
-url = "https://github.com/jdx/hk/releases/download/v1.44.2/hk-x86_64-pc-windows-msvc.zip"
+checksum = "sha256:c59c6bf1c45157903ce58a5572257a959ca5e3895b6b9cbfb808a744d4858fb9"
+url = "https://github.com/jdx/hk/releases/download/v1.44.3/hk-x86_64-pc-windows-msvc.zip"
 
 [[tools.pkl]]
 version = "0.31.1"
@@ -289,49 +289,49 @@ url = "https://github.com/astral-sh/ruff/releases/download/0.15.12/ruff-x86_64-p
 provenance = "github-attestations"
 
 [[tools.rumdl]]
-version = "0.1.84"
+version = "0.1.87"
 backend = "github:rvben/rumdl"
 
 [tools.rumdl."platforms.linux-arm64"]
-checksum = "sha256:f64b515553502fde0073f6043438dddd08bccd6ed6547231be8e6ad3841637b5"
-url = "https://github.com/rvben/rumdl/releases/download/v0.1.84/rumdl-v0.1.84-aarch64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/rvben/rumdl/releases/assets/407735976"
+checksum = "sha256:76af01b95b98a33e84f8b61199b222687598f6fe7cdddd7f338277348c9a967b"
+url = "https://github.com/rvben/rumdl/releases/download/v0.1.87/rumdl-v0.1.87-aarch64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/rvben/rumdl/releases/assets/410738760"
 provenance = "github-attestations"
 
 [tools.rumdl."platforms.linux-arm64-musl"]
-checksum = "sha256:bb9fe7cec710e2c22bf0ca433244821c83ea41ac8489ed6e8363d7b9653bd4af"
-url = "https://github.com/rvben/rumdl/releases/download/v0.1.84/rumdl-v0.1.84-aarch64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/rvben/rumdl/releases/assets/407735982"
+checksum = "sha256:46819a6efe32dc6405f1d074df17ad29ffa385945dc0fb4c0067154ad6581fc0"
+url = "https://github.com/rvben/rumdl/releases/download/v0.1.87/rumdl-v0.1.87-aarch64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/rvben/rumdl/releases/assets/410738754"
 provenance = "github-attestations"
 
 [tools.rumdl."platforms.linux-x64"]
-checksum = "sha256:4edf49f64bed4f46e0afe6b59d42222a4eda8b0cb54647cfca31f3b48ec8bdf4"
-url = "https://github.com/rvben/rumdl/releases/download/v0.1.84/rumdl-v0.1.84-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/rvben/rumdl/releases/assets/407735974"
+checksum = "sha256:96f05cb06f74622b055d2dbaf57fb768a47eb8be88f316edc0860174852ed6c9"
+url = "https://github.com/rvben/rumdl/releases/download/v0.1.87/rumdl-v0.1.87-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/rvben/rumdl/releases/assets/410738752"
 provenance = "github-attestations"
 
 [tools.rumdl."platforms.linux-x64-musl"]
-checksum = "sha256:8581eb945a523a8c0f3c14b1c4046a172c5f3d3baf89c56f5851c466e35c8253"
-url = "https://github.com/rvben/rumdl/releases/download/v0.1.84/rumdl-v0.1.84-x86_64-unknown-linux-musl.tar.gz"
-url_api = "https://api.github.com/repos/rvben/rumdl/releases/assets/407735972"
+checksum = "sha256:192480470f81086857c472e84df87829ea2faabf7dc50cde1d8e7b1c7c5baaf0"
+url = "https://github.com/rvben/rumdl/releases/download/v0.1.87/rumdl-v0.1.87-x86_64-unknown-linux-musl.tar.gz"
+url_api = "https://api.github.com/repos/rvben/rumdl/releases/assets/410738753"
 provenance = "github-attestations"
 
 [tools.rumdl."platforms.macos-arm64"]
-checksum = "sha256:ebbf52128eaa3dc238f9d215c3522c6c2a7365a6833d4a4ca12a0506cf49ca1e"
-url = "https://github.com/rvben/rumdl/releases/download/v0.1.84/rumdl-v0.1.84-aarch64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/rvben/rumdl/releases/assets/407735985"
+checksum = "sha256:61dd3a05e1f328f0e18f4f6ab48ae48948e63662dac034c1dcb3e24aec3cd467"
+url = "https://github.com/rvben/rumdl/releases/download/v0.1.87/rumdl-v0.1.87-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/rvben/rumdl/releases/assets/410738757"
 provenance = "github-attestations"
 
 [tools.rumdl."platforms.macos-x64"]
-checksum = "sha256:771c7ab2328603d1264c697999c72c01dd920f043a870afc8df61d1b03d0ae19"
-url = "https://github.com/rvben/rumdl/releases/download/v0.1.84/rumdl-v0.1.84-x86_64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/rvben/rumdl/releases/assets/407735973"
+checksum = "sha256:571f958d33afcec20f9eb4a7735929198a77839d4baf3f4f3a18b83cc6474685"
+url = "https://github.com/rvben/rumdl/releases/download/v0.1.87/rumdl-v0.1.87-x86_64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/rvben/rumdl/releases/assets/410738755"
 provenance = "github-attestations"
 
 [tools.rumdl."platforms.windows-x64"]
-checksum = "sha256:70ff9daa97e59a9d34e8a340cc3a8813055eb246913c0a4e7856bf80ce152978"
-url = "https://github.com/rvben/rumdl/releases/download/v0.1.84/rumdl-v0.1.84-x86_64-pc-windows-msvc.zip"
-url_api = "https://api.github.com/repos/rvben/rumdl/releases/assets/407735983"
+checksum = "sha256:5bcc73caca8b88c9781157f0cb94b06624b242ba677d7b59c2ad69b0a4e70b32"
+url = "https://github.com/rvben/rumdl/releases/download/v0.1.87/rumdl-v0.1.87-x86_64-pc-windows-msvc.zip"
+url_api = "https://api.github.com/repos/rvben/rumdl/releases/assets/410738765"
 provenance = "github-attestations"
 
 [[tools.shellcheck]]
@@ -399,106 +399,106 @@ checksum = "sha256:60cd368533d0ad73fa86d93d5bbf95ef40587245ce684ed138c1b31557b5f
 url = "https://github.com/mvdan/sh/releases/download/v3.13.1/shfmt_v3.13.1_windows_amd64.exe"
 
 [[tools.syft]]
-version = "1.43.0"
+version = "1.44.0"
 backend = "aqua:anchore/syft"
 
 [tools.syft."platforms.linux-arm64"]
-checksum = "sha256:afe92510c467f952a009b994f2d998ff8f9dd266dc26eca55d14a0dd46fec7f2"
-url = "https://github.com/anchore/syft/releases/download/v1.43.0/syft_1.43.0_linux_arm64.tar.gz"
+checksum = "sha256:6f6cdcdc695721d91ce756e3b5bc3e3416599c464101f5e32e9c3f33054ee6d9"
+url = "https://github.com/anchore/syft/releases/download/v1.44.0/syft_1.44.0_linux_arm64.tar.gz"
 
 [tools.syft."platforms.linux-arm64-musl"]
-checksum = "sha256:afe92510c467f952a009b994f2d998ff8f9dd266dc26eca55d14a0dd46fec7f2"
-url = "https://github.com/anchore/syft/releases/download/v1.43.0/syft_1.43.0_linux_arm64.tar.gz"
+checksum = "sha256:6f6cdcdc695721d91ce756e3b5bc3e3416599c464101f5e32e9c3f33054ee6d9"
+url = "https://github.com/anchore/syft/releases/download/v1.44.0/syft_1.44.0_linux_arm64.tar.gz"
 
 [tools.syft."platforms.linux-x64"]
-checksum = "sha256:7b98251d2d08926bb5d4639b56b1f0996a58ef6667c5830e3fe3cd3ad5f4214a"
-url = "https://github.com/anchore/syft/releases/download/v1.43.0/syft_1.43.0_linux_amd64.tar.gz"
+checksum = "sha256:0e91737aee2b5baf1d255b959630194a302335d848ff97bb07921eb6205b5f5a"
+url = "https://github.com/anchore/syft/releases/download/v1.44.0/syft_1.44.0_linux_amd64.tar.gz"
 
 [tools.syft."platforms.linux-x64-musl"]
-checksum = "sha256:7b98251d2d08926bb5d4639b56b1f0996a58ef6667c5830e3fe3cd3ad5f4214a"
-url = "https://github.com/anchore/syft/releases/download/v1.43.0/syft_1.43.0_linux_amd64.tar.gz"
+checksum = "sha256:0e91737aee2b5baf1d255b959630194a302335d848ff97bb07921eb6205b5f5a"
+url = "https://github.com/anchore/syft/releases/download/v1.44.0/syft_1.44.0_linux_amd64.tar.gz"
 
 [tools.syft."platforms.macos-arm64"]
-checksum = "sha256:3640e2181c8be7a56377f3c96e520d5380c924dbafd115ee3c8d45fcbc89cac2"
-url = "https://github.com/anchore/syft/releases/download/v1.43.0/syft_1.43.0_darwin_arm64.tar.gz"
+checksum = "sha256:24e4d34078ae81da7c82539616f0ccac3e226cf4f74a38ce6fb3463619e50a55"
+url = "https://github.com/anchore/syft/releases/download/v1.44.0/syft_1.44.0_darwin_arm64.tar.gz"
 
 [tools.syft."platforms.macos-x64"]
-checksum = "sha256:08fd18f55037f999f50b2c2256a9285f0146978a0b16cdc58662ecdc85d0e3c0"
-url = "https://github.com/anchore/syft/releases/download/v1.43.0/syft_1.43.0_darwin_amd64.tar.gz"
+checksum = "sha256:c40ece5407927327f94f35901727dbc604b46857e04f04ec94a310845fb71bde"
+url = "https://github.com/anchore/syft/releases/download/v1.44.0/syft_1.44.0_darwin_amd64.tar.gz"
 
 [tools.syft."platforms.windows-x64"]
-checksum = "sha256:c51695d171c61460369dabdd5c71b8f350ef8618466818356a30808d7105c710"
-url = "https://github.com/anchore/syft/releases/download/v1.43.0/syft_1.43.0_windows_amd64.zip"
+checksum = "sha256:195e786eb84ec145854f20528992e86637c77d1968731dfe6ce850c90e28f47a"
+url = "https://github.com/anchore/syft/releases/download/v1.44.0/syft_1.44.0_windows_amd64.zip"
 
 [[tools.tombi]]
-version = "0.9.26"
+version = "0.10.2"
 backend = "aqua:tombi-toml/tombi"
 
 [tools.tombi."platforms.linux-arm64"]
-checksum = "sha256:208a38f26b1b7ce3c060f82fb326f6a6304b04d661002f96bddee53bdb20e707"
-url = "https://github.com/tombi-toml/tombi/releases/download/v0.9.26/tombi-cli-0.9.26-aarch64-unknown-linux-musl.tar.gz"
+checksum = "sha256:9cb16ec45802bc84cb76bb955facb4f1c5de9bd36f349075765ed12d180ceccf"
+url = "https://github.com/tombi-toml/tombi/releases/download/v0.10.2/tombi-cli-0.10.2-aarch64-unknown-linux-musl.tar.gz"
 
 [tools.tombi."platforms.linux-arm64-musl"]
-checksum = "sha256:208a38f26b1b7ce3c060f82fb326f6a6304b04d661002f96bddee53bdb20e707"
-url = "https://github.com/tombi-toml/tombi/releases/download/v0.9.26/tombi-cli-0.9.26-aarch64-unknown-linux-musl.tar.gz"
+checksum = "sha256:9cb16ec45802bc84cb76bb955facb4f1c5de9bd36f349075765ed12d180ceccf"
+url = "https://github.com/tombi-toml/tombi/releases/download/v0.10.2/tombi-cli-0.10.2-aarch64-unknown-linux-musl.tar.gz"
 
 [tools.tombi."platforms.linux-x64"]
-checksum = "sha256:3839e78a4f5db8a785f593b3113e86908ca125a9e0f3f9955e0a759b0b39c6ad"
-url = "https://github.com/tombi-toml/tombi/releases/download/v0.9.26/tombi-cli-0.9.26-x86_64-unknown-linux-musl.tar.gz"
+checksum = "sha256:c4268eaaea8a7eb23c8578b5d8976b2490e748670a3725db4f5e4352f9d3076c"
+url = "https://github.com/tombi-toml/tombi/releases/download/v0.10.2/tombi-cli-0.10.2-x86_64-unknown-linux-musl.tar.gz"
 
 [tools.tombi."platforms.linux-x64-musl"]
-checksum = "sha256:3839e78a4f5db8a785f593b3113e86908ca125a9e0f3f9955e0a759b0b39c6ad"
-url = "https://github.com/tombi-toml/tombi/releases/download/v0.9.26/tombi-cli-0.9.26-x86_64-unknown-linux-musl.tar.gz"
+checksum = "sha256:c4268eaaea8a7eb23c8578b5d8976b2490e748670a3725db4f5e4352f9d3076c"
+url = "https://github.com/tombi-toml/tombi/releases/download/v0.10.2/tombi-cli-0.10.2-x86_64-unknown-linux-musl.tar.gz"
 
 [tools.tombi."platforms.macos-arm64"]
-checksum = "sha256:7012f29da0ceb81755ced1463f225f4b482cae124dff6eb72d7e52ab0c13b0b9"
-url = "https://github.com/tombi-toml/tombi/releases/download/v0.9.26/tombi-cli-0.9.26-aarch64-apple-darwin.tar.gz"
+checksum = "sha256:e456b5518923f1c3b3b136aa92c57aa9ffc6f27d8ce155af337509d3f5a3a619"
+url = "https://github.com/tombi-toml/tombi/releases/download/v0.10.2/tombi-cli-0.10.2-aarch64-apple-darwin.tar.gz"
 
 [tools.tombi."platforms.macos-x64"]
-checksum = "sha256:313e082bf5981afbd96a4972e5eb568cbf5922a6bfa4b83c4c28346f5052b001"
-url = "https://github.com/tombi-toml/tombi/releases/download/v0.9.26/tombi-cli-0.9.26-x86_64-apple-darwin.tar.gz"
+checksum = "sha256:b3ed94dc4396f565728a7ccb08de466de13607b3f4e73741ab5a3d13571e46f7"
+url = "https://github.com/tombi-toml/tombi/releases/download/v0.10.2/tombi-cli-0.10.2-x86_64-apple-darwin.tar.gz"
 
 [tools.tombi."platforms.windows-x64"]
-checksum = "sha256:c72b563a65d3c83543360205e5a915fc0eeaba70db3171a17a75472563897cf6"
-url = "https://github.com/tombi-toml/tombi/releases/download/v0.9.26/tombi-cli-0.9.26-x86_64-pc-windows-msvc.zip"
+checksum = "sha256:8ecfb32d7fe90612a626a25500fa92a9b4e42dbad6a00f202849901a058dd6a7"
+url = "https://github.com/tombi-toml/tombi/releases/download/v0.10.2/tombi-cli-0.10.2-x86_64-pc-windows-msvc.zip"
 
 [[tools.ty]]
-version = "0.0.33"
+version = "0.0.34"
 backend = "aqua:astral-sh/ty"
 
 [tools.ty."platforms.linux-arm64"]
-checksum = "sha256:6d24c789204226586bf7aa49da6254a2fcfde2660b0b2d0cf99ef6ea18c1edb2"
-url = "https://github.com/astral-sh/ty/releases/download/0.0.33/ty-aarch64-unknown-linux-musl.tar.gz"
+checksum = "sha256:658fbb36846d28ed4e71df0ddaf3bf6f5ac64913ae2fe2105b086436a123e3fd"
+url = "https://github.com/astral-sh/ty/releases/download/0.0.34/ty-aarch64-unknown-linux-musl.tar.gz"
 provenance = "github-attestations"
 
 [tools.ty."platforms.linux-arm64-musl"]
-checksum = "sha256:6d24c789204226586bf7aa49da6254a2fcfde2660b0b2d0cf99ef6ea18c1edb2"
-url = "https://github.com/astral-sh/ty/releases/download/0.0.33/ty-aarch64-unknown-linux-musl.tar.gz"
+checksum = "sha256:658fbb36846d28ed4e71df0ddaf3bf6f5ac64913ae2fe2105b086436a123e3fd"
+url = "https://github.com/astral-sh/ty/releases/download/0.0.34/ty-aarch64-unknown-linux-musl.tar.gz"
 provenance = "github-attestations"
 
 [tools.ty."platforms.linux-x64"]
-checksum = "sha256:5e11c6883a73c379eda3481ed4766f34a30b7a0c2a3bc3653afb95bb74a4b7f7"
-url = "https://github.com/astral-sh/ty/releases/download/0.0.33/ty-x86_64-unknown-linux-musl.tar.gz"
+checksum = "sha256:6579d8436fb17f49f338aed854027464a259af2cbf92fde10717461d8c867c90"
+url = "https://github.com/astral-sh/ty/releases/download/0.0.34/ty-x86_64-unknown-linux-musl.tar.gz"
 provenance = "github-attestations"
 
 [tools.ty."platforms.linux-x64-musl"]
-checksum = "sha256:5e11c6883a73c379eda3481ed4766f34a30b7a0c2a3bc3653afb95bb74a4b7f7"
-url = "https://github.com/astral-sh/ty/releases/download/0.0.33/ty-x86_64-unknown-linux-musl.tar.gz"
+checksum = "sha256:6579d8436fb17f49f338aed854027464a259af2cbf92fde10717461d8c867c90"
+url = "https://github.com/astral-sh/ty/releases/download/0.0.34/ty-x86_64-unknown-linux-musl.tar.gz"
 provenance = "github-attestations"
 
 [tools.ty."platforms.macos-arm64"]
-checksum = "sha256:df13913f8b082675788a8b10d05b0f6d0f076be2d777a1315a468c3a882e791c"
-url = "https://github.com/astral-sh/ty/releases/download/0.0.33/ty-aarch64-apple-darwin.tar.gz"
+checksum = "sha256:7f571161be28cb2ca211f609959b23dd8cea79b7b5b7857c3970e5f69a872fec"
+url = "https://github.com/astral-sh/ty/releases/download/0.0.34/ty-aarch64-apple-darwin.tar.gz"
 provenance = "github-attestations"
 
 [tools.ty."platforms.macos-x64"]
-checksum = "sha256:9e856908e2de49d5c319c68594846c70165a621b42071c53019a01ae9a125b0e"
-url = "https://github.com/astral-sh/ty/releases/download/0.0.33/ty-x86_64-apple-darwin.tar.gz"
+checksum = "sha256:aa28bac4ad4ffd138fd94b1274049f269835752aab2b9bc1d5044ca0f08062d3"
+url = "https://github.com/astral-sh/ty/releases/download/0.0.34/ty-x86_64-apple-darwin.tar.gz"
 provenance = "github-attestations"
 
 [tools.ty."platforms.windows-x64"]
-checksum = "sha256:47bdb807dd298561b09f5f9d986243e1b9796e439cd5a0cfc002d063beceed6c"
-url = "https://github.com/astral-sh/ty/releases/download/0.0.33/ty-x86_64-pc-windows-msvc.zip"
+checksum = "sha256:89df0fee551300b4fa418dc4d3fd25f5f91a467e9db6d48f23596c17c3c3708a"
+url = "https://github.com/astral-sh/ty/releases/download/0.0.34/ty-x86_64-pc-windows-msvc.zip"
 provenance = "github-attestations"
 
 [[tools.uv]]

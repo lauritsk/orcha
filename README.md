@@ -8,6 +8,12 @@ result, generates a Conventional Commit title and PR body, commits the final
 changes, opens or updates a PR, waits for checks, asks the agent to fix failures,
 squash-merges the PR, and cleans up.
 
+## Status
+
+- Maturity: strategic automation CLI
+- Primary command: `mise run check`
+- Release target: GitHub release / Python package artifact
+
 ## Features
 
 - Creates a clean branch in a sibling git worktree.
